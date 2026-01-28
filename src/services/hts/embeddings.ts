@@ -307,7 +307,7 @@ export async function generateAllEmbeddings(options: {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SEMANTIC SEARCH
+// SEARCH TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface SemanticSearchResult {
@@ -321,7 +321,273 @@ export interface SemanticSearchResult {
   adValoremRate: number | null;
   parentGroupings: string[];
   similarity: number;
+  // For hybrid search - tracks which method found this result
+  searchMethod?: 'semantic' | 'lexical' | 'both';
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LEXICAL/BM25 SEARCH (PostgreSQL Full-Text Search)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Prepare search query for PostgreSQL full-text search
+ * Converts user input to a proper tsquery format
+ * 
+ * "cotton t-shirt boys" → "cotton & tshirt & boys | cotton & t-shirt & boys"
+ */
+function prepareSearchQuery(query: string): string {
+  const words = query
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '') // Remove special chars except hyphens
+    .split(/\s+/)
+    .filter(w => w.length > 1);
+  
+  if (words.length === 0) return '';
+  
+  // Create variations for hyphenated terms
+  const variations: string[][] = [];
+  
+  for (const word of words) {
+    const wordVariants = [word];
+    
+    // Handle hyphenated words
+    if (word.includes('-')) {
+      wordVariants.push(word.replace(/-/g, '')); // t-shirt → tshirt
+      wordVariants.push(word.replace(/-/g, ' ')); // t-shirt → t shirt
+    } else if (word.length > 2) {
+      // Try adding hyphen after first letter for common patterns
+      // tshirt → t-shirt
+      wordVariants.push(word[0] + '-' + word.slice(1));
+    }
+    
+    variations.push([...new Set(wordVariants)]);
+  }
+  
+  // Build OR groups for each word position
+  const orGroups = variations.map(vars => 
+    vars.length > 1 ? `(${vars.join(' | ')})` : vars[0]
+  );
+  
+  // Join with AND - all words must match
+  return orGroups.join(' & ');
+}
+
+/**
+ * Search HTS codes using PostgreSQL full-text search (BM25-like ranking)
+ * This catches exact matches that embeddings might miss
+ * 
+ * Key advantage: "confetti paper spirals" will EXACTLY match 
+ * HTS description "Confetti, paper spirals..." with very high score
+ */
+export async function searchHtsByLexical(
+  query: string,
+  options: {
+    limit?: number;
+    chapters?: string[];
+    minRank?: number;
+  } = {}
+): Promise<SemanticSearchResult[]> {
+  const { limit = 30, chapters, minRank = 0.001 } = options;
+  
+  const searchQuery = prepareSearchQuery(query);
+  if (!searchQuery) return [];
+  
+  console.log(`[Lexical Search] Query: "${query}" → tsquery: "${searchQuery}"`);
+  
+  try {
+    let results: SemanticSearchResult[];
+    
+    if (chapters && chapters.length > 0) {
+      results = await prisma.$queryRaw<SemanticSearchResult[]>`
+        SELECT 
+          code,
+          "codeFormatted",
+          level::TEXT,
+          description,
+          chapter,
+          heading,
+          "generalRate",
+          "adValoremRate",
+          "parentGroupings",
+          ts_rank(
+            setweight(to_tsvector('english', description), 'A') ||
+            setweight(to_tsvector('english', coalesce(array_to_string(keywords, ' '), '')), 'B') ||
+            setweight(to_tsvector('english', coalesce(embedding_context, '')), 'C'),
+            to_tsquery('english', ${searchQuery})
+          ) AS similarity
+        FROM hts_code
+        WHERE level IN ('tariff_line', 'statistical')
+          AND chapter = ANY(${chapters})
+          AND (
+            to_tsvector('english', description) @@ to_tsquery('english', ${searchQuery})
+            OR to_tsvector('english', coalesce(array_to_string(keywords, ' '), '')) @@ to_tsquery('english', ${searchQuery})
+            OR to_tsvector('english', coalesce(embedding_context, '')) @@ to_tsquery('english', ${searchQuery})
+          )
+        ORDER BY similarity DESC
+        LIMIT ${limit}
+      `;
+    } else {
+      results = await prisma.$queryRaw<SemanticSearchResult[]>`
+        SELECT 
+          code,
+          "codeFormatted",
+          level::TEXT,
+          description,
+          chapter,
+          heading,
+          "generalRate",
+          "adValoremRate",
+          "parentGroupings",
+          ts_rank(
+            setweight(to_tsvector('english', description), 'A') ||
+            setweight(to_tsvector('english', coalesce(array_to_string(keywords, ' '), '')), 'B') ||
+            setweight(to_tsvector('english', coalesce(embedding_context, '')), 'C'),
+            to_tsquery('english', ${searchQuery})
+          ) AS similarity
+        FROM hts_code
+        WHERE level IN ('tariff_line', 'statistical')
+          AND (
+            to_tsvector('english', description) @@ to_tsquery('english', ${searchQuery})
+            OR to_tsvector('english', coalesce(array_to_string(keywords, ' '), '')) @@ to_tsquery('english', ${searchQuery})
+            OR to_tsvector('english', coalesce(embedding_context, '')) @@ to_tsquery('english', ${searchQuery})
+          )
+        ORDER BY similarity DESC
+        LIMIT ${limit}
+      `;
+    }
+    
+    // Normalize lexical scores to 0-1 range (ts_rank typically returns 0-0.5)
+    // and mark search method
+    const normalizedResults = results
+      .filter(r => r.similarity >= minRank)
+      .map(r => ({
+        ...r,
+        similarity: Math.min(1, r.similarity * 2), // Scale up for comparison with semantic
+        searchMethod: 'lexical' as const,
+      }));
+    
+    console.log(`[Lexical Search] Found ${normalizedResults.length} results (from ${results.length} raw)`);
+    
+    return normalizedResults;
+  } catch (err) {
+    console.error('[Lexical Search] Error:', err);
+    return [];
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HYBRID SEARCH (Semantic + Lexical)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Hybrid search combining semantic embeddings and lexical/BM25 search
+ * 
+ * This is THE KEY IMPROVEMENT:
+ * - Semantic: Understands "sneakers" = "footwear" (vocabulary gap)
+ * - Lexical: Catches exact matches like "confetti" = "Confetti, paper spirals"
+ * 
+ * Results are merged with configurable weights
+ */
+export async function hybridSearch(
+  query: string,
+  options: {
+    limit?: number;
+    chapters?: string[];
+    semanticWeight?: number;  // 0-1, default 0.6
+    lexicalWeight?: number;   // 0-1, default 0.4
+    minSimilarity?: number;
+  } = {}
+): Promise<SemanticSearchResult[]> {
+  const { 
+    limit = 30, 
+    chapters, 
+    semanticWeight = 0.6, 
+    lexicalWeight = 0.4,
+    minSimilarity = 0.2 
+  } = options;
+  
+  console.log(`[Hybrid Search] Query: "${query}", weights: semantic=${semanticWeight}, lexical=${lexicalWeight}`);
+  
+  // Run both searches in parallel for speed
+  const [semanticResults, lexicalResults] = await Promise.all([
+    searchHtsBySemantic(query, { 
+      limit: limit * 2, 
+      chapters, 
+      minSimilarity: minSimilarity * 0.5 // Lower threshold for semantic
+    }),
+    searchHtsByLexical(query, { 
+      limit: limit * 2, 
+      chapters,
+      minRank: 0.0001 // Very low threshold to catch all lexical matches
+    }),
+  ]);
+  
+  console.log(`[Hybrid Search] Semantic: ${semanticResults.length}, Lexical: ${lexicalResults.length}`);
+  
+  // Merge results with weighted scoring
+  const mergedMap = new Map<string, SemanticSearchResult & { 
+    semanticScore: number; 
+    lexicalScore: number;
+    combinedScore: number;
+  }>();
+  
+  // Add semantic results
+  for (const result of semanticResults) {
+    mergedMap.set(result.code, {
+      ...result,
+      semanticScore: result.similarity,
+      lexicalScore: 0,
+      combinedScore: result.similarity * semanticWeight,
+      searchMethod: 'semantic',
+    });
+  }
+  
+  // Add/merge lexical results
+  for (const result of lexicalResults) {
+    const existing = mergedMap.get(result.code);
+    if (existing) {
+      // Found by BOTH methods - boost significantly!
+      existing.lexicalScore = result.similarity;
+      existing.combinedScore = 
+        (existing.semanticScore * semanticWeight) + 
+        (result.similarity * lexicalWeight) +
+        0.1; // Bonus for appearing in both
+      existing.searchMethod = 'both';
+    } else {
+      // Only found by lexical
+      mergedMap.set(result.code, {
+        ...result,
+        semanticScore: 0,
+        lexicalScore: result.similarity,
+        combinedScore: result.similarity * lexicalWeight,
+        searchMethod: 'lexical',
+      });
+    }
+  }
+  
+  // Sort by combined score
+  const merged = Array.from(mergedMap.values())
+    .sort((a, b) => b.combinedScore - a.combinedScore)
+    .slice(0, limit);
+  
+  // Log search method distribution
+  const methodCounts = merged.reduce((acc, r) => {
+    acc[r.searchMethod || 'unknown'] = (acc[r.searchMethod || 'unknown'] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  
+  console.log(`[Hybrid Search] Merged: ${merged.length} results`, methodCounts);
+  
+  // Return with combined score as similarity
+  return merged.map(r => ({
+    ...r,
+    similarity: r.combinedScore,
+  }));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SEMANTIC SEARCH
+// ═══════════════════════════════════════════════════════════════════════════════
 
 /**
  * Search HTS codes by semantic similarity to a query
@@ -389,8 +655,12 @@ export async function searchHtsBySemantic(
 }
 
 /**
- * Dual-path search: Material + Function
- * Runs two parallel searches and finds the intersection
+ * Dual-path search: Material + Function using HYBRID search
+ * Runs semantic + lexical in parallel and finds the intersection
+ * 
+ * KEY IMPROVEMENT: Now uses hybrid search (embeddings + BM25) for better accuracy
+ * - Semantic: Handles vocabulary gaps ("sneakers" = "footwear")
+ * - Lexical: Catches exact matches ("confetti" = "Confetti, paper spirals...")
  * 
  * When preferredHeadings are provided, prioritize results from those headings
  * This helps guide classification to ARTICLES (containers, tableware) not RAW MATERIALS (vegetables, plants)
@@ -398,9 +668,15 @@ export async function searchHtsBySemantic(
 export async function dualPathSearch(
   materialQuery: string | null,
   functionQuery: string,
-  options: { limit?: number; preferredHeadings?: string[] } = {}
+  options: { limit?: number; preferredHeadings?: string[]; useHybrid?: boolean } = {}
 ): Promise<SemanticSearchResult[]> {
-  const { limit = 20, preferredHeadings = [] } = options;
+  const { limit = 20, preferredHeadings = [], useHybrid = true } = options;
+  
+  // Choose search function based on useHybrid flag
+  const searchFn = useHybrid ? hybridSearch : searchHtsBySemantic;
+  const searchName = useHybrid ? 'HYBRID' : 'SEMANTIC';
+  
+  console.log(`[dualPathSearch] Using ${searchName} search`);
   
   // If we have preferred headings, search within those first
   if (preferredHeadings.length > 0) {
@@ -411,7 +687,7 @@ export async function dualPathSearch(
     
     // Search with chapter restriction - use LOW threshold to get diverse results
     // Scoring/filtering at the V10 level will handle quality control
-    const headingResults = await searchHtsBySemantic(functionQuery, {
+    const headingResults = await searchFn(functionQuery, {
       limit: limit * 3, // Get many candidates for diversity
       minSimilarity: 0.15, // Low threshold - we want at least one result per chapter
       chapters: preferredChapters,
@@ -433,9 +709,15 @@ export async function dualPathSearch(
       const boostedResults = headingResults.map(r => {
         const heading = r.code.slice(0, 4);
         const isPreferred = preferredHeadings.some(ph => heading.startsWith(ph.slice(0, 4)));
+        
+        // Extra boost for results found by BOTH semantic and lexical
+        const hybridBonus = r.searchMethod === 'both' ? 1.15 : 1.0;
+        
         return {
           ...r,
-          similarity: isPreferred ? r.similarity * 1.2 : r.similarity, // 20% boost for exact heading match
+          similarity: isPreferred 
+            ? r.similarity * 1.2 * hybridBonus  // 20% boost for preferred heading + hybrid bonus
+            : r.similarity * hybridBonus,
         };
       });
       
@@ -463,17 +745,23 @@ export async function dualPathSearch(
       // Re-sort and limit
       result.sort((a, b) => b.similarity - a.similarity);
       
-      console.log(`[dualPathSearch] Found ${result.length} results across ${includedChapters.size} chapters (from ${headingResults.length} raw)`);
+      // Log search method distribution
+      const methodCounts = result.reduce((acc, r) => {
+        acc[r.searchMethod || 'unknown'] = (acc[r.searchMethod || 'unknown'] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      
+      console.log(`[dualPathSearch] Found ${result.length} results across ${includedChapters.size} chapters`, methodCounts);
       return result.slice(0, limit);
     }
   }
   
-  // Standard dual-path search
+  // Standard dual-path search with hybrid
   const [materialResults, functionResults] = await Promise.all([
     materialQuery 
-      ? searchHtsBySemantic(`${materialQuery} material products`, { limit: 30 })
+      ? searchFn(`${materialQuery} material products`, { limit: 30 })
       : Promise.resolve([]),
-    searchHtsBySemantic(functionQuery, { limit: 30 }),
+    searchFn(functionQuery, { limit: 30 }),
   ]);
   
   // If we have material results, find intersection with function results
@@ -481,7 +769,7 @@ export async function dualPathSearch(
     const materialChapters = [...new Set(materialResults.map(r => r.chapter))];
     
     // Re-search function query limited to material-relevant chapters
-    const intersectionResults = await searchHtsBySemantic(functionQuery, {
+    const intersectionResults = await searchFn(functionQuery, {
       limit,
       chapters: materialChapters,
     });
@@ -496,16 +784,36 @@ export async function dualPathSearch(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// EMBEDDING STATS
+// EMBEDDING STATS & UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Check if full-text search is available on the HTS table
+ * This validates our lexical search capability
+ */
+export async function checkFullTextSearchAvailable(): Promise<boolean> {
+  try {
+    // Try a simple full-text search query
+    const result = await prisma.$queryRaw<[{ count: bigint }]>`
+      SELECT COUNT(*) as count FROM hts_code 
+      WHERE to_tsvector('english', description) @@ to_tsquery('english', 'test')
+      LIMIT 1
+    `;
+    return true;
+  } catch (err) {
+    console.warn('[Embeddings] Full-text search not available:', err);
+    return false;
+  }
+}
 
 export async function getEmbeddingStats(): Promise<{
   totalCodes: number;
   withEmbeddings: number;
   pendingEmbeddings: number;
   coverage: string;
+  hybridSearchAvailable?: boolean;
 }> {
-  const [total, withEmbeddings] = await Promise.all([
+  const [total, withEmbeddings, hybridAvailable] = await Promise.all([
     prisma.htsCode.count({
       where: { level: { in: ['tariff_line', 'statistical'] } },
     }),
@@ -514,6 +822,7 @@ export async function getEmbeddingStats(): Promise<{
       WHERE embedding IS NOT NULL 
       AND level IN ('tariff_line', 'statistical')
     `.then(r => Number(r[0].count)),
+    checkFullTextSearchAvailable(),
   ]);
   
   const pending = total - withEmbeddings;
@@ -524,5 +833,6 @@ export async function getEmbeddingStats(): Promise<{
     withEmbeddings,
     pendingEmbeddings: pending,
     coverage,
+    hybridSearchAvailable: hybridAvailable,
   };
 }

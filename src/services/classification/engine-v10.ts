@@ -24,11 +24,23 @@ import {
   parseHtsCode,
 } from '@/services/hts/database';
 import { getEffectiveTariff, convertToLegacyFormat } from '@/services/tariff/registry';
-import { searchHtsBySemantic, dualPathSearch, getEmbeddingStats } from '@/services/hts/embeddings';
+import { 
+  searchHtsBySemantic, 
+  dualPathSearch, 
+  getEmbeddingStats,
+  hybridSearch,
+  searchHtsByLexical,
+} from '@/services/hts/embeddings';
 import { 
   detectConditionalSiblings,
   ConditionalClassificationResult,
 } from '@/services/conditionalClassification';
+import { 
+  conditionalRerank, 
+  RerankerCandidate,
+  RerankerResult,
+  llmGuidedClassification,
+} from '@/services/classification/llmReranker';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HTS CHAPTER DESCRIPTIONS (Not in database, stored here for reference)
@@ -230,6 +242,16 @@ export interface ClassifyV10Result {
   
   // AI Reasoning - explains WHY the classification was chosen
   aiReasoning?: AIReasoning;
+  
+  // LLM Reranker result (when used)
+  llmReranking?: {
+    used: boolean;
+    reasoning: string;
+    previousBest?: string;
+    newBest?: string;
+    confidence: number;
+    timing: number;
+  };
   
   // Clarification needed when confidence is too low
   needsClarification?: {
@@ -1398,7 +1420,8 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
       const stats = await getEmbeddingStats();
       
       if (stats.withEmbeddings > 1000) { // Need at least some embeddings
-        console.log(`[V10] Using SEMANTIC SEARCH (${stats.coverage} coverage)`);
+        const searchMode = stats.hybridSearchAvailable ? 'HYBRID (Semantic + Lexical)' : 'SEMANTIC';
+        console.log(`[V10] Using ${searchMode} SEARCH (${stats.coverage} embedding coverage)`);
         
         // CRITICAL: Enrich the query with product type context
         // This prevents "indoor planter" from matching "greenhouse vegetables"
@@ -1415,6 +1438,7 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
         console.log(`[V10] Enriched query: "${enrichedDescription}"`);
         
         // Use dual-path search for material + function
+        // HYBRID SEARCH: Combines semantic (embeddings) + lexical (BM25) for best accuracy
         const semanticResults = await dualPathSearch(
           detectedMaterial,
           enrichedDescription,
@@ -1422,6 +1446,8 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
             limit: 50,
             // When we know the product type, restrict to relevant headings
             preferredHeadings: productTypeHints.headings,
+            // Enable hybrid search (semantic + lexical)
+            useHybrid: stats.hybridSearchAvailable !== false,
           }
         );
         
@@ -1473,8 +1499,19 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
               (similarityMap.get(b.code) || 0) - (similarityMap.get(a.code) || 0)
             );
             
-            usedSemanticSearch = true;
-            console.log(`[V10] Semantic search found ${allResults.length} candidates (${diverseResults.length} diverse from ${semanticResults.length} total)`);
+            const bestSimilarity = diverseResults.length > 0 ? diverseResults[0].similarity : 0;
+            console.log(`[V10] Semantic search found ${allResults.length} candidates (${diverseResults.length} diverse from ${semanticResults.length} total), best similarity: ${bestSimilarity.toFixed(2)}`);
+            
+            // If best semantic result has low similarity, also run keyword fallback to supplement
+            // This ensures we don't miss good matches when embeddings aren't perfect
+            if (bestSimilarity >= PRIMARY_THRESHOLD) {
+              // High quality semantic results - use only these
+              usedSemanticSearch = true;
+            } else {
+              // Low quality - keep semantic results but also run keyword fallback
+              console.log(`[V10] Best semantic similarity (${bestSimilarity.toFixed(2)}) below threshold (${PRIMARY_THRESHOLD}), supplementing with keyword search`);
+              usedSemanticSearch = false; // This will trigger keyword fallback below
+            }
           } else {
             console.log(`[V10] All semantic results below ${ALTERNATIVE_THRESHOLD} threshold, using keyword fallback`);
           }
@@ -1487,7 +1524,7 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
     }
   }
   
-  // Fallback to keyword search if semantic search didn't work
+  // Fallback to keyword search if semantic search didn't work OR had low-quality results
   if (!usedSemanticSearch) {
     console.log('[V10] Using KEYWORD SEARCH');
     
@@ -1514,30 +1551,41 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
     }
     
     // Priority 2: Search in material chapter with expanded keywords
-    if (allResults.length < 30 && materialChapters.length > 0) {
-      const keywordResults = await prisma.htsCode.findMany({
-        where: {
-          AND: [
-            { chapter: { in: materialChapters } },
-            { level: { in: ['statistical', 'tariff_line'] } },
-            { 
-              OR: [
-                { keywords: { hasSome: expandedTerms } },
-                ...expandedTerms.slice(0, 3).map(term => ({
-                  description: { contains: term, mode: 'insensitive' as const },
-                })),
-              ],
-            },
-          ],
-        },
-        take: 50,
-        orderBy: { code: 'asc' },
-      });
+    // Also search for common product terms even without material detection
+    const searchTermsForKeyword = expandedTerms.length > 0 ? expandedTerms : searchTerms;
+    if (allResults.length < 50) {
+      // Search in relevant chapters (material-based if available, or common textile/bedding chapters)
+      const chaptersToSearch = materialChapters.length > 0 
+        ? materialChapters 
+        : searchTerms.some(t => ['sheet', 'bedding', 'bed', 'linen', 'textile', 'fabric'].includes(t.toLowerCase()))
+          ? ['63', '94'] // Textiles and bedding chapters
+          : [];
       
-      const existingCodes = new Set(allResults.map(r => r.code));
-      const newResults = keywordResults.filter(r => !existingCodes.has(r.code));
-      allResults = [...allResults, ...newResults];
-      console.log(`[V10] Found ${newResults.length} codes via keyword search in chapter`);
+      if (chaptersToSearch.length > 0 || materialChapters.length === 0) {
+        const keywordResults = await prisma.htsCode.findMany({
+          where: {
+            AND: [
+              ...(chaptersToSearch.length > 0 ? [{ chapter: { in: chaptersToSearch } }] : []),
+              { level: { in: ['statistical', 'tariff_line'] } },
+              { 
+                OR: [
+                  { keywords: { hasSome: searchTermsForKeyword } },
+                  ...searchTermsForKeyword.slice(0, 5).map(term => ({
+                    description: { contains: term, mode: 'insensitive' as const },
+                  })),
+                ],
+              },
+            ],
+          },
+          take: 50,
+          orderBy: { code: 'asc' },
+        });
+      
+        const existingCodes = new Set(allResults.map(r => r.code));
+        const newResults = keywordResults.filter(r => !existingCodes.has(r.code));
+        allResults = [...allResults, ...newResults];
+        console.log(`[V10] Found ${newResults.length} codes via keyword search${chaptersToSearch.length > 0 ? ` in chapters ${chaptersToSearch.join(', ')}` : ''}`);
+      }
     }
     
     // Priority 3: Broader search if still few results
@@ -1701,6 +1749,294 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
   
   scoringTime = Date.now() - scoringStart;
   console.log(`[V10] Scored ${candidates.length} candidates in ${scoringTime}ms`);
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PHASE 3.5: LLM RERANKER (Conditional - only when confidence is low)
+  // 
+  // This is the KEY INTELLIGENCE: When heuristic scoring can't distinguish between
+  // candidates (e.g., "indoor planter" → household vs hotel/restaurant), we use
+  // an LLM to reason about the correct classification.
+  // 
+  // Only triggered when:
+  // 1. Top candidate confidence < 60%
+  // 2. There are alternatives in different chapters/headings (ambiguity)
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  let rerankerResult: RerankerResult | null = null;
+  const topCandidate = uniqueCandidates[0];
+  const RERANK_THRESHOLD = 60;
+  
+  // Check if we should trigger reranking
+  // Trigger on:
+  // 1. Low confidence (< 60%)
+  // 2. Close margin between top candidates (ambiguity)
+  // 3. Scattered chapters in results (suggests retrieval confusion)
+  // 4. Always verify with LLM for better accuracy
+  
+  const secondCandidate = uniqueCandidates[1];
+  const hasCloseMargin = secondCandidate && (topCandidate.score - secondCandidate.score) < 15;
+  
+  // Detect scattered chapters - if top 5 results are spread across many chapters,
+  // it suggests the retrieval is confused (e.g., "sheet" matching both bed sheets and plastic sheets)
+  const top5Chapters = new Set(uniqueCandidates.slice(0, 5).map(c => c.chapter));
+  const hasScatteredChapters = top5Chapters.size >= 3;
+  
+  // Detect if alternatives look unrelated to the primary
+  // (e.g., primary is textiles but alternatives are raw materials)
+  const primaryChapter = topCandidate?.chapter;
+  const altChapters = uniqueCandidates.slice(1, 6).map(c => c.chapter);
+  const unrelatedAlts = altChapters.filter(ch => {
+    // Check if chapters are in completely different HTS sections
+    const primarySection = Math.floor(parseInt(primaryChapter || '0') / 10);
+    const altSection = Math.floor(parseInt(ch || '0') / 10);
+    return Math.abs(primarySection - altSection) > 3; // More than 3 sections apart
+  });
+  const hasUnrelatedAlternatives = unrelatedAlts.length >= 2;
+  
+  // Always rerank if confidence is below threshold OR there's any ambiguity signal
+  const shouldRerank = topCandidate && (
+    topCandidate.score < RERANK_THRESHOLD ||
+    hasCloseMargin ||
+    hasScatteredChapters ||
+    hasUnrelatedAlternatives
+  );
+  
+  if (shouldRerank) {
+    console.log(`[V10] Reranking triggered: confidence=${topCandidate.score}%, closeMargin=${hasCloseMargin}, scatteredChapters=${hasScatteredChapters}, unrelatedAlts=${hasUnrelatedAlternatives}`);
+    const rerankerStart = Date.now();
+    
+    // Prepare candidates for reranker
+    const rerankerCandidates: RerankerCandidate[] = await Promise.all(
+      uniqueCandidates.slice(0, 15).map(async (c) => {
+        // Build full description if not already done
+        const fullDesc = c.fullDescription || (await buildFullDescription(c.code)).full;
+        const chapterDesc = CHAPTER_DESCRIPTIONS[c.chapter] || `Chapter ${c.chapter}`;
+        
+        return {
+          code: c.code,
+          codeFormatted: c.codeFormatted,
+          description: c.description,
+          fullDescription: fullDesc,
+          chapter: c.chapter,
+          chapterDescription: chapterDesc,
+          confidence: c.score,
+          parentDescription: c.parentDescription || undefined,
+          material: detectedMaterial || undefined,
+        };
+      })
+    );
+    
+    try {
+      rerankerResult = await conditionalRerank(
+        description,
+        rerankerCandidates,
+        topCandidate.score,
+        {
+          threshold: RERANK_THRESHOLD,
+          detectedMaterial,
+          forceRerank: true, // We've already checked the threshold
+        }
+      );
+      
+      // If reranker succeeded, reorder candidates
+      if (rerankerResult?.success && rerankerResult.bestMatch) {
+        const bestCode = rerankerResult.bestMatch.code;
+        const bestIndex = uniqueCandidates.findIndex(c => c.code === bestCode);
+        
+        if (bestIndex > 0) {
+          // Move best match to front and update its score
+          const [best] = uniqueCandidates.splice(bestIndex, 1);
+          best.score = rerankerResult.bestMatch.confidence;
+          best.factors.total = rerankerResult.bestMatch.confidence;
+          uniqueCandidates.unshift(best);
+          
+          console.log(`[V10] Reranker moved ${best.codeFormatted} to #1 (was #${bestIndex + 1})`);
+        } else if (bestIndex === 0) {
+          // Already first, update confidence
+          uniqueCandidates[0].score = rerankerResult.bestMatch.confidence;
+          uniqueCandidates[0].factors.total = rerankerResult.bestMatch.confidence;
+        } else if (bestIndex === -1 && bestCode) {
+          // LLM suggested a code that's NOT in our candidates!
+          // This means the search missed the right chapter - trigger LLM-guided classification
+          // Pass the suggested code so we search the right heading directly
+          console.log(`[V10] LLM suggested code ${bestCode} not in candidates - triggering LLM-guided search`);
+          
+          const guidedStart = Date.now();
+          const guidedResult = await llmGuidedClassification(description, detectedMaterial, bestCode);
+          
+          if (guidedResult.success && guidedResult.bestMatch) {
+            console.log(`[V10] LLM-guided found: ${guidedResult.bestMatch.code} (${guidedResult.bestMatch.confidence}%)`);
+            
+            const guidedCandidate = guidedResult.candidates.find(c => c.code === guidedResult.bestMatch!.code);
+            if (guidedCandidate) {
+              // Insert the guided result at the top
+              uniqueCandidates.unshift({
+                code: guidedCandidate.code,
+                codeFormatted: guidedCandidate.codeFormatted,
+                description: guidedCandidate.description,
+                fullDescription: guidedCandidate.fullDescription,
+                chapter: guidedCandidate.chapter,
+                heading: guidedCandidate.code.slice(0, 4),
+                score: guidedResult.bestMatch.confidence,
+                similarity: 0.9,
+                factors: {
+                  keywordMatch: 0,
+                  materialMatch: 0,
+                  specificity: 0,
+                  hierarchyCoherence: 0,
+                  penalties: 0,
+                  total: guidedResult.bestMatch.confidence,
+                },
+                isOther: false,
+              });
+              
+              rerankerResult = {
+                ...rerankerResult,
+                bestMatch: guidedResult.bestMatch,
+              };
+            }
+          }
+          
+          console.log(`[V10] LLM-guided complete in ${Date.now() - guidedStart}ms`);
+        }
+      }
+      
+      const rerankerTime = Date.now() - rerankerStart;
+      console.log(`[V10] LLM reranker complete in ${rerankerTime}ms`);
+      
+      // If reranker confidence is still very low, try LLM-guided classification
+      const rerankedConfidence = rerankerResult?.bestMatch?.confidence || 0;
+      if (rerankedConfidence < 30 && rerankerResult?.success) {
+        console.log(`[V10] Reranker confidence still low (${rerankedConfidence}%), trying LLM-guided classification`);
+        
+        const guidedStart = Date.now();
+        const guidedResult = await llmGuidedClassification(description, detectedMaterial);
+        
+        if (guidedResult.success && guidedResult.bestMatch && guidedResult.bestMatch.confidence > rerankedConfidence) {
+          console.log(`[V10] LLM-guided found better match: ${guidedResult.bestMatch.code} (${guidedResult.bestMatch.confidence}%)`);
+          
+          // Replace candidates with guided results
+          const guidedCandidate = guidedResult.candidates.find(c => c.code === guidedResult.bestMatch!.code);
+          if (guidedCandidate) {
+            // Insert the guided result at the top
+            const existingIndex = uniqueCandidates.findIndex(c => c.code === guidedCandidate.code);
+            if (existingIndex >= 0) {
+              uniqueCandidates.splice(existingIndex, 1);
+            }
+            
+            // Create a proper scored candidate from the guided result
+            uniqueCandidates.unshift({
+              code: guidedCandidate.code,
+              codeFormatted: guidedCandidate.codeFormatted,
+              description: guidedCandidate.description,
+              fullDescription: guidedCandidate.fullDescription,
+              chapter: guidedCandidate.chapter,
+              heading: guidedCandidate.code.slice(0, 4),
+              score: guidedResult.bestMatch.confidence,
+              similarity: 0.9,
+              factors: {
+                keywordMatch: 0,
+                materialMatch: 0,
+                specificity: 0,
+                hierarchyCoherence: 0,
+                penalties: 0,
+                total: guidedResult.bestMatch.confidence,
+              },
+              isOther: false,
+            });
+            
+            // Update reranker result to reflect guided classification
+            rerankerResult = {
+              ...rerankerResult,
+              bestMatch: guidedResult.bestMatch,
+            };
+          }
+        }
+        
+        console.log(`[V10] LLM-guided complete in ${Date.now() - guidedStart}ms`);
+      }
+      
+    } catch (err) {
+      console.error('[V10] LLM reranker error (continuing with heuristic results):', err);
+    }
+  }
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PHASE 3.6: FILTER UNRELATED ALTERNATIVES
+  // 
+  // Remove alternatives that are clearly unrelated to the primary classification.
+  // For example, if primary is "bed sheets" (Chapter 63), filter out "plastic sheets" (Chapter 39).
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  const primaryResult = uniqueCandidates[0];
+  if (primaryResult) {
+    // HTS Sections mapping (simplified)
+    // Sections 1-4: Animals, Vegetables, Fats, Food (Ch 1-24)
+    // Section 5-6: Mineral, Chemical (Ch 25-38)
+    // Section 7: Plastics, Rubber (Ch 39-40)
+    // Section 8: Leather, Furs (Ch 41-43)
+    // Section 9: Wood (Ch 44-46)
+    // Section 10: Pulp, Paper (Ch 47-49)
+    // Section 11: Textiles (Ch 50-63)
+    // Section 12: Footwear, Headgear (Ch 64-67)
+    // Section 13: Stone, Ceramic, Glass (Ch 68-70)
+    // Section 14: Precious metals (Ch 71)
+    // Section 15: Base metals (Ch 72-83)
+    // Section 16: Machinery (Ch 84-85)
+    // Section 17-21: Transport, Instruments, Arms, Misc, Art (Ch 86-97)
+    
+    const getSection = (chapter: string): number => {
+      const ch = parseInt(chapter);
+      if (ch <= 5) return 1;
+      if (ch <= 14) return 2;
+      if (ch <= 15) return 3;
+      if (ch <= 24) return 4;
+      if (ch <= 27) return 5;
+      if (ch <= 38) return 6;
+      if (ch <= 40) return 7;  // Plastics, Rubber
+      if (ch <= 43) return 8;
+      if (ch <= 46) return 9;
+      if (ch <= 49) return 10;
+      if (ch <= 63) return 11; // Textiles
+      if (ch <= 67) return 12;
+      if (ch <= 70) return 13;
+      if (ch <= 71) return 14;
+      if (ch <= 83) return 15;
+      if (ch <= 85) return 16;
+      if (ch <= 89) return 17;
+      if (ch <= 92) return 18;
+      if (ch <= 93) return 19;
+      if (ch <= 96) return 20; // Misc manufactured (furniture, bedding, toys, etc.)
+      return 21;
+    };
+    
+    const primarySection = getSection(primaryResult.chapter);
+    
+    // Filter alternatives to keep only those in same or adjacent HTS sections
+    // This removes "vocabulary confusion" matches (e.g., "bed sheet" vs "plastic sheet")
+    const filteredCandidates = uniqueCandidates.filter((c, idx) => {
+      if (idx === 0) return true; // Always keep primary
+      
+      const altSection = getSection(c.chapter);
+      
+      // Keep if in same or adjacent section
+      if (Math.abs(primarySection - altSection) <= 1) return true;
+      
+      // Keep if same chapter as primary
+      if (c.chapter === primaryResult.chapter) return true;
+      
+      // Filter out unrelated sections regardless of score
+      // High score from keyword match doesn't mean the product is relevant
+      console.log(`[V10] Filtering unrelated alternative: ${c.codeFormatted} (Ch ${c.chapter}, Section ${altSection}) - primary is Section ${primarySection}`);
+      return false;
+    });
+    
+    // Replace candidates with filtered list, but keep at least 5 alternatives
+    if (filteredCandidates.length >= 6) {
+      uniqueCandidates.length = 0;
+      uniqueCandidates.push(...filteredCandidates);
+    }
+  }
   
   // ─────────────────────────────────────────────────────────────────────────────
   // PHASE 4: BUILD RESULTS
@@ -2143,6 +2479,15 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
     aiReasoning,
     needsClarification,
     conditionalClassification,
+    // Include LLM reranker info if it was used
+    llmReranking: rerankerResult?.success ? {
+      used: true,
+      reasoning: rerankerResult.bestMatch?.reasoning || '',
+      previousBest: topCandidate?.codeFormatted,
+      newBest: rerankerResult.bestMatch?.code ? formatHtsCode(rerankerResult.bestMatch.code) : undefined,
+      confidence: rerankerResult.bestMatch?.confidence || 0,
+      timing: rerankerResult.timing,
+    } : undefined,
   };
 }
 
