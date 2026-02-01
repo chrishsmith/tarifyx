@@ -12,6 +12,7 @@
 
 import { classifyV10, ClassifyV10Input } from '@/services/classification/engine-v10';
 import { getEffectiveTariff } from '@/services/tariff/registry';
+import { getHTSHierarchy } from '@/services/hts/hierarchy';
 import type { 
   ImportAnalysis, 
   ProductInput,
@@ -103,6 +104,23 @@ async function getClassification(input: AnalyzeProductInput): Promise<Classifica
     throw new Error('Classification failed - no primary result');
   }
   
+  // Fetch full hierarchy with descriptions for classification path
+  let hierarchyPath: string[] = [];
+  try {
+    const hierarchy = await getHTSHierarchy(result.primary.htsCode);
+    console.log('[Orchestrator] Hierarchy fetched:', hierarchy.levels.length, 'levels');
+    // Extract codes and descriptions from hierarchy levels
+    hierarchyPath = hierarchy.levels.map(level => {
+      const cleanCode = level.code.replace(/\./g, '');
+      return `${cleanCode}|${level.description}`;
+    });
+    console.log('[Orchestrator] Hierarchy path:', hierarchyPath);
+  } catch (error) {
+    console.error('[Orchestrator] Failed to fetch hierarchy:', error);
+    // Fallback to basic codes from classification result
+    hierarchyPath = result.primary.path?.codes || [];
+  }
+  
   return {
     htsCode: result.primary.htsCode,
     description: result.primary.shortDescription || result.primary.fullDescription || '',
@@ -113,7 +131,7 @@ async function getClassification(input: AnalyzeProductInput): Promise<Classifica
       confidence: alt.confidence,
       dutyRate: alt.duty?.baseMfn?.toString() || '0',
     })) || [],
-    path: result.primary.path?.codes || [],
+    path: hierarchyPath,
   };
 }
 

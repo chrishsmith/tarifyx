@@ -463,7 +463,7 @@ export default function ClassificationV10LayoutB({
                 {showInputForm && (
                     <Card className="border-slate-200 shadow-sm">
                         <div className="flex items-center gap-3 mb-5">
-                            <div className="p-2 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg">
+                            <div className="p-2 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl">
                                 <Zap size={20} className="text-white" />
                             </div>
                             <div>

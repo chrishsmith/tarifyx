@@ -155,7 +155,7 @@ export const ClassificationForm: React.FC = () => {
                 <Card className="border border-slate-200 shadow-sm">
                     <div className="py-8 px-4">
                         <div className="text-center mb-8">
-                            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-teal-100 mb-4">
+                            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-teal-100 mb-4">
                                 <Loader2 size={32} className="text-teal-600 animate-spin" />
                             </div>
                             <Title level={4} className="m-0 text-slate-900">
