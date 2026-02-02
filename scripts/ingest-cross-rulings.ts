@@ -2,11 +2,12 @@
  * Script to download and ingest CROSS rulings from HuggingFace
  * 
  * Dataset: flexifyai/cross_rulings_hts_dataset_for_tariffs
- * - 18,731 rulings
+ * - 18,731 total rulings (train: 18,254, validation: 200, test: 277)
  * - ~2,992 unique HTS codes
  * - MIT license
  * 
- * Usage: npx ts-node scripts/ingest-cross-rulings.ts
+ * Usage: npx ts-node scripts/ingest-cross-rulings.ts [split]
+ * - split: 'train' (default), 'validation', 'test', or 'all'
  */
 
 import * as fs from 'fs';
@@ -18,12 +19,16 @@ const __dirname = path.dirname(__filename);
 
 const DATASET_API = 'https://datasets-server.huggingface.co/rows';
 const DATASET_ID = 'flexifyai/cross_rulings_hts_dataset_for_tariffs';
-const OUTPUT_PATH = path.join(__dirname, '../src/data/crossRulings.json');
+const OUTPUT_DIR = path.join(__dirname, '../src/data');
 const BATCH_SIZE = 100;
-const MAX_RULINGS = 20000; // Download full dataset (~18,654 rulings)
+const MAX_RULINGS = 20000; // Download full dataset
 const DELAY_BETWEEN_BATCHES = 2000; // 2 second delay to avoid rate limiting
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 30000; // 30 second wait on rate limit
+
+// Get split from command line args (default: 'all')
+const SPLIT_ARG = process.argv[2] || 'all';
+const VALID_SPLITS = ['train', 'validation', 'test', 'all'];
 
 interface HFMessage {
   role: string;
@@ -44,10 +49,10 @@ interface CrossRuling {
   chapter: string;
 }
 
-async function fetchBatch(offset: number, length: number, retryCount = 0): Promise<HFRow[]> {
-  const url = `${DATASET_API}?dataset=${encodeURIComponent(DATASET_ID)}&config=default&split=train&offset=${offset}&length=${length}`;
+async function fetchBatch(split: string, offset: number, length: number, retryCount = 0): Promise<HFRow[]> {
+  const url = `${DATASET_API}?dataset=${encodeURIComponent(DATASET_ID)}&config=default&split=${split}&offset=${offset}&length=${length}`;
   
-  console.log(`Fetching batch: offset=${offset}, length=${length}`);
+  console.log(`Fetching ${split} batch: offset=${offset}, length=${length}`);
   
   const response = await fetch(url);
   
@@ -56,7 +61,7 @@ async function fetchBatch(offset: number, length: number, retryCount = 0): Promi
     if (retryCount < MAX_RETRIES) {
       console.log(`Rate limited! Waiting ${RETRY_DELAY/1000}s before retry ${retryCount + 1}/${MAX_RETRIES}...`);
       await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-      return fetchBatch(offset, length, retryCount + 1);
+      return fetchBatch(split, offset, length, retryCount + 1);
     }
     throw new Error(`Rate limited after ${MAX_RETRIES} retries`);
   }
@@ -69,7 +74,7 @@ async function fetchBatch(offset: number, length: number, retryCount = 0): Promi
   return data.rows || [];
 }
 
-function parseRuling(row: HFRow, index: number): CrossRuling | null {
+function parseRuling(row: HFRow, index: number, split: string): CrossRuling | null {
   try {
     const messages = row.row.messages;
     const userMsg = messages.find(m => m.role === 'user');
@@ -103,7 +108,7 @@ function parseRuling(row: HFRow, index: number): CrossRuling | null {
     const chapter = htsCodes[0].slice(0, 2);
     
     return {
-      id: `cross-${index}`,
+      id: `cross-${split}-${index}`,
       productDescription,
       htsCodes,
       reasoning,
@@ -115,21 +120,22 @@ function parseRuling(row: HFRow, index: number): CrossRuling | null {
   }
 }
 
-async function main() {
-  console.log('=== CROSS Rulings Dataset Ingestion ===\n');
-  console.log(`Target: ${MAX_RULINGS} rulings`);
-  console.log(`Output: ${OUTPUT_PATH}\n`);
+async function downloadSplit(split: string): Promise<CrossRuling[]> {
+  console.log(`\n=== Downloading ${split} split ===`);
   
-  // Try to resume from existing file
+  const OUTPUT_PATH = path.join(OUTPUT_DIR, `crossRulings-${split}.json`);
   let rulings: CrossRuling[] = [];
   let offset = 0;
   
+  // Try to resume from existing file
   if (fs.existsSync(OUTPUT_PATH)) {
     try {
       const existing = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf-8'));
       rulings = existing.rulings || [];
-      // Calculate offset based on highest ID
-      const maxId = Math.max(...rulings.map(r => parseInt(r.id.replace('cross-', ''))));
+      const maxId = Math.max(...rulings.map(r => {
+        const parts = r.id.split('-');
+        return parseInt(parts[parts.length - 1]);
+      }));
       offset = Math.floor(maxId / BATCH_SIZE) * BATCH_SIZE + BATCH_SIZE;
       console.log(`Resuming from offset ${offset} (${rulings.length} existing rulings)`);
     } catch (e) {
@@ -139,28 +145,28 @@ async function main() {
   
   while (rulings.length < MAX_RULINGS) {
     try {
-      const batch = await fetchBatch(offset, BATCH_SIZE);
+      const batch = await fetchBatch(split, offset, BATCH_SIZE);
       
       if (batch.length === 0) {
-        console.log('No more data available');
+        console.log(`No more data available for ${split} split`);
         break;
       }
       
       for (let i = 0; i < batch.length; i++) {
-        const ruling = parseRuling(batch[i], offset + i);
+        const ruling = parseRuling(batch[i], offset + i, split);
         if (ruling) {
           rulings.push(ruling);
         }
       }
       
-      console.log(`Progress: ${rulings.length}/${MAX_RULINGS} rulings`);
+      console.log(`Progress: ${rulings.length} rulings`);
       offset += BATCH_SIZE;
       
       // Rate limiting - wait between batches to avoid API limits
       await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES));
       
     } catch (error) {
-      console.error('Error fetching batch:', error);
+      console.error(`Error fetching ${split} batch:`, error);
       break;
     }
   }
@@ -171,23 +177,15 @@ async function main() {
     chapters.set(ruling.chapter, (chapters.get(ruling.chapter) || 0) + 1);
   }
   
-  console.log(`\n=== Statistics ===`);
+  console.log(`\n=== ${split} Statistics ===`);
   console.log(`Total rulings: ${rulings.length}`);
   console.log(`Unique chapters: ${chapters.size}`);
-  console.log(`Top chapters:`);
-  
-  const sortedChapters = Array.from(chapters.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10);
-  
-  for (const [chapter, count] of sortedChapters) {
-    console.log(`  Chapter ${chapter}: ${count} rulings`);
-  }
   
   // Save to file
   const output = {
     metadata: {
       source: 'flexifyai/cross_rulings_hts_dataset_for_tariffs',
+      split,
       downloadedAt: new Date().toISOString(),
       totalRulings: rulings.length,
       uniqueChapters: chapters.size,
@@ -196,13 +194,75 @@ async function main() {
   };
   
   // Ensure directory exists
-  const dir = path.dirname(OUTPUT_PATH);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(OUTPUT_DIR)) {
+    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   }
   
   fs.writeFileSync(OUTPUT_PATH, JSON.stringify(output, null, 2));
-  console.log(`\nSaved to: ${OUTPUT_PATH}`);
+  console.log(`Saved to: ${OUTPUT_PATH}`);
+  
+  return rulings;
+}
+
+async function main() {
+  console.log('=== CROSS Rulings Dataset Ingestion ===');
+  console.log(`Split: ${SPLIT_ARG}`);
+  console.log(`Output directory: ${OUTPUT_DIR}\n`);
+  
+  if (!VALID_SPLITS.includes(SPLIT_ARG)) {
+    console.error(`Invalid split: ${SPLIT_ARG}`);
+    console.error(`Valid splits: ${VALID_SPLITS.join(', ')}`);
+    process.exit(1);
+  }
+  
+  const splitsToDownload = SPLIT_ARG === 'all' 
+    ? ['train', 'validation', 'test'] 
+    : [SPLIT_ARG];
+  
+  const allRulings: CrossRuling[] = [];
+  
+  for (const split of splitsToDownload) {
+    const rulings = await downloadSplit(split);
+    allRulings.push(...rulings);
+  }
+  
+  // If downloading all splits, create a combined file
+  if (SPLIT_ARG === 'all') {
+    console.log('\n=== Creating combined dataset ===');
+    const chapters = new Map<string, number>();
+    for (const ruling of allRulings) {
+      chapters.set(ruling.chapter, (chapters.get(ruling.chapter) || 0) + 1);
+    }
+    
+    console.log(`Total rulings across all splits: ${allRulings.length}`);
+    console.log(`Unique chapters: ${chapters.size}`);
+    console.log(`Top chapters:`);
+    
+    const sortedChapters = Array.from(chapters.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
+    
+    for (const [chapter, count] of sortedChapters) {
+      console.log(`  Chapter ${chapter}: ${count} rulings`);
+    }
+    
+    const combinedOutput = {
+      metadata: {
+        source: 'flexifyai/cross_rulings_hts_dataset_for_tariffs',
+        splits: ['train', 'validation', 'test'],
+        downloadedAt: new Date().toISOString(),
+        totalRulings: allRulings.length,
+        uniqueChapters: chapters.size,
+      },
+      rulings: allRulings,
+    };
+    
+    const combinedPath = path.join(OUTPUT_DIR, 'crossRulings.json');
+    fs.writeFileSync(combinedPath, JSON.stringify(combinedOutput, null, 2));
+    console.log(`\nSaved combined dataset to: ${combinedPath}`);
+  }
+  
+  console.log('\n=== Download complete ===');
 }
 
 main().catch(console.error);

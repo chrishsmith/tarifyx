@@ -133,23 +133,78 @@ function formatHtsPattern(code: string): string {
 
 /**
  * Get Section 301 tariff rate for an HTS code
+ * Uses local mapping first, with chapter-based fallback for unmapped codes
  */
-export function getSection301Rate(htsCode: string): { rate: number; listNames: string[] } | null {
+export function getSection301Rate(htsCode: string): { 
+    rate: number; 
+    listNames: string[]; 
+    confidence: 'exact' | 'estimated';
+    source: 'mapping' | 'chapter_estimate';
+} | null {
     const mapping = findSection301Lists(htsCode);
-    if (!mapping) return null;
+    
+    if (mapping) {
+        const listNames = mapping.lists.map(list => {
+            switch (list) {
+                case 'list1': return 'Section 301 List 1';
+                case 'list2': return 'Section 301 List 2';
+                case 'list3': return 'Section 301 List 3';
+                case 'list4a': return 'Section 301 List 4A';
+                case 'list4b': return 'Section 301 List 4B';
+                case 'list2024': return 'Section 301 (2024)';
+                case 'excluded': return 'Excluded';
+                default: return list;
+            }
+        });
 
-    const listNames = mapping.lists.map(list => {
-        switch (list) {
-            case 'list1': return 'Section 301 List 1';
-            case 'list2': return 'Section 301 List 2';
-            case 'list3': return 'Section 301 List 3';
-            case 'list4a': return 'Section 301 List 4A';
-            case 'list4b': return 'Section 301 List 4B';
-            case 'list2024': return 'Section 301 (2024)';
-            case 'excluded': return 'Excluded';
-            default: return list;
-        }
-    });
-
-    return { rate: mapping.effectiveRate, listNames };
+        return { 
+            rate: mapping.effectiveRate, 
+            listNames, 
+            confidence: 'exact',
+            source: 'mapping'
+        };
+    }
+    
+    // Fallback: Chapter-based estimate for unmapped codes
+    // Most Chinese goods are on some Section 301 list
+    const cleanCode = htsCode.replace(/\./g, '');
+    const chapter = cleanCode.substring(0, 2);
+    
+    // Chapter-based estimates (conservative)
+    const chapterEstimates: Record<string, { rate: number; list: string }> = {
+        // List 1 chapters (industrial machinery, electronics) - 25%
+        '84': { rate: 25, list: 'Section 301 (estimated - machinery)' },
+        '85': { rate: 25, list: 'Section 301 (estimated - electronics)' },
+        '90': { rate: 25, list: 'Section 301 (estimated - instruments)' },
+        // List 3 chapters (broad consumer/industrial) - 25%
+        '39': { rate: 25, list: 'Section 301 (estimated - plastics)' },
+        '40': { rate: 25, list: 'Section 301 (estimated - rubber)' },
+        '73': { rate: 25, list: 'Section 301 (estimated - iron/steel articles)' },
+        '94': { rate: 25, list: 'Section 301 (estimated - furniture)' },
+        '95': { rate: 25, list: 'Section 301 (estimated - toys)' },
+        // List 4A chapters (consumer goods) - 7.5%
+        '61': { rate: 7.5, list: 'Section 301 (estimated - knit apparel)' },
+        '62': { rate: 7.5, list: 'Section 301 (estimated - woven apparel)' },
+        '63': { rate: 7.5, list: 'Section 301 (estimated - textiles)' },
+        '64': { rate: 7.5, list: 'Section 301 (estimated - footwear)' },
+        '42': { rate: 7.5, list: 'Section 301 (estimated - leather goods)' },
+    };
+    
+    const estimate = chapterEstimates[chapter];
+    if (estimate) {
+        return {
+            rate: estimate.rate,
+            listNames: [estimate.list],
+            confidence: 'estimated',
+            source: 'chapter_estimate'
+        };
+    }
+    
+    // Default fallback for other chapters from China - assume 7.5% (List 4A rate)
+    return {
+        rate: 7.5,
+        listNames: ['Section 301 (estimated - default)'],
+        confidence: 'estimated',
+        source: 'chapter_estimate'
+    };
 }

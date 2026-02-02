@@ -94,6 +94,12 @@ export interface LandedCost {
   
   // Insights
   dutyAsPercentOfProduct: number; // How much duties add to product cost
+  
+  // Data quality & freshness
+  dataQuality: 'high' | 'medium' | 'low';
+  lastUpdated: Date | string | null;
+  tariffConfidence: number; // 0-100 confidence in tariff accuracy
+  dataSource?: string; // e.g., "USITC HTS API", "Tariff Registry"
 }
 
 export interface CountryOption {

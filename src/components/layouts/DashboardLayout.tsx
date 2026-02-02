@@ -30,6 +30,7 @@ import {
     ListChecks,
     History,
     BellRing,
+    Compass,
 } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSession } from '@/lib/auth-client';
@@ -102,21 +103,26 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             label: 'Overview',
         },
         {
-            key: 'classify',
+            key: '/dashboard/classifications',
             icon: <Sparkles size={18} />,
             label: 'Classify',
+        },
+        {
+            key: 'import',
+            icon: <Compass size={18} />,
+            label: 'Import Intelligence',
             children: [
                 {
-                    key: '/dashboard/classifications',
-                    label: 'Single',
+                    key: '/dashboard/import/analyze',
+                    label: 'Analyze Product',
                 },
                 {
-                    key: '/dashboard/classify/bulk',
-                    label: 'Bulk',
+                    key: '/dashboard/import/bulk',
+                    label: 'Bulk Analysis',
                 },
                 {
-                    key: '/dashboard/classifications?tab=history',
-                    label: 'History',
+                    key: '/dashboard/import/portfolio',
+                    label: 'My Portfolio',
                 },
             ],
         },
@@ -227,15 +233,22 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
 
     // Get selected key - handle route variations and sub-menu items
     const getSelectedKey = () => {
-        // Handle sub-menu items
-        if (pathname.startsWith('/dashboard/classify/bulk')) {
-            return '/dashboard/classify/bulk';
-        }
+        // Handle classify routes
         if (pathname.startsWith('/dashboard/classify') || pathname.startsWith('/dashboard/classifications')) {
             return '/dashboard/classifications';
         }
         if (pathname.startsWith('/dashboard/monitoring')) {
             return '/dashboard/products';
+        }
+        // Import Intelligence sub-items
+        if (pathname.startsWith('/dashboard/import/analyze')) {
+            return '/dashboard/import/analyze';
+        }
+        if (pathname.startsWith('/dashboard/import/bulk')) {
+            return '/dashboard/import/bulk';
+        }
+        if (pathname.startsWith('/dashboard/import/portfolio')) {
+            return '/dashboard/import/portfolio';
         }
         // Duties sub-items
         if (pathname.startsWith('/dashboard/duties/calculator')) {
@@ -282,8 +295,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
     // Get open sub-menus based on current path - initialize on mount and pathname change
     useEffect(() => {
         const keys: string[] = [];
-        if (pathname.startsWith('/dashboard/classify') || pathname.startsWith('/dashboard/classifications')) {
-            keys.push('classify');
+        if (pathname.startsWith('/dashboard/import')) {
+            keys.push('import');
         }
         if (pathname.startsWith('/dashboard/duties') || pathname.startsWith('/dashboard/optimizer')) {
             keys.push('duties');
@@ -393,6 +406,14 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
 
     // Get page title from pathname
     const getPageTitle = () => {
+        // Handle import intelligence routes
+        if (pathname.startsWith('/dashboard/import')) {
+            if (pathname.includes('/analyze')) return 'Analyze Product';
+            if (pathname.includes('/bulk')) return 'Bulk Analysis';
+            if (pathname.includes('/portfolio')) return 'My Portfolio';
+            return 'Import Intelligence';
+        }
+        
         const segment = pathname.split('/').pop() || 'dashboard';
         const titles: Record<string, string> = {
             'dashboard': 'Overview',

@@ -41,6 +41,7 @@ import {
   RerankerResult,
   llmGuidedClassification,
 } from '@/services/classification/llmReranker';
+import { classifyWithSetFit } from '@/services/setfitClassifier';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HTS CHAPTER DESCRIPTIONS (Not in database, stored here for reference)
@@ -157,6 +158,7 @@ export interface ClassifyV10Input {
   destination?: string;   // ISO country code (default: 'US')
   material?: string;      // Optional material hint
   useSemanticSearch?: boolean; // Use embedding-based semantic search (faster, more accurate)
+  useSetFit?: boolean;    // Try SetFit ML model first (fastest, 50-100ms)
 }
 
 // AI Reasoning - explains WHY the classification was chosen
@@ -242,6 +244,10 @@ export interface ClassifyV10Result {
   
   // AI Reasoning - explains WHY the classification was chosen
   aiReasoning?: AIReasoning;
+  
+  // SetFit ML model result (when used)
+  setfitUsed?: boolean;
+  setfitLatency?: number;
   
   // LLM Reranker result (when used)
   llmReranking?: {
@@ -1402,6 +1408,79 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
   console.log('[V10] Material chapters:', materialChapters);
   console.log('[V10] Product type:', productTypeHints.type);
   console.log('[V10] Product headings hint:', productTypeHints.headings);
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PHASE 1.5: TRY SETFIT FAST PATH (if enabled and available)
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  const useSetFit = input.useSetFit !== false; // Default to true
+  let setfitResult: Awaited<ReturnType<typeof classifyWithSetFit>> | null = null;
+  
+  if (useSetFit) {
+    try {
+      console.log('[V10] Trying SetFit fast path...');
+      setfitResult = await classifyWithSetFit(description);
+      
+      // If SetFit has high confidence (>80%), use it directly
+      if (setfitResult && setfitResult.predictions[0]?.confidence > 0.80) {
+        const setfitCode = setfitResult.predictions[0].code;
+        console.log(`[V10] SetFit high confidence: ${setfitCode} (${(setfitResult.predictions[0].confidence * 100).toFixed(1)}%)`);
+        
+        // Fetch the HTS code details from database
+        const htsCode = await prisma.htsCode.findUnique({
+          where: { code: setfitCode }
+        });
+        
+        if (htsCode) {
+          // Use SetFit result as primary, skip semantic search
+          console.log('[V10] Using SetFit result, skipping semantic search');
+          
+          // Build result using SetFit prediction
+          const primaryDesc = await buildFullDescription(htsCode.code);
+          const dutyInfo = await getEffectiveTariff(htsCode.code, origin || 'CN', destination);
+          
+          return {
+            success: true,
+            timing: {
+              total: Date.now() - startTime,
+              search: setfitResult.latency_ms,
+              scoring: 0,
+              tariff: 0,
+            },
+            primary: {
+              htsCode: htsCode.code,
+              htsCodeFormatted: htsCode.codeFormatted,
+              confidence: Math.round(setfitResult.predictions[0].confidence * 100),
+              path: primaryDesc.path,
+              fullDescription: primaryDesc.full,
+              shortDescription: htsCode.description,
+              duty: dutyInfo,
+              isOther: false,
+              scoringFactors: {
+                semanticMatch: setfitResult.predictions[0].confidence * 100,
+                keywordMatch: 0,
+                materialMatch: 0,
+                productTypeMatch: 0,
+                total: setfitResult.predictions[0].confidence * 100,
+              },
+            },
+            alternatives: [],
+            showMore: false,
+            detectedMaterial,
+            detectedChapters: materialChapters,
+            searchTerms,
+            aiReasoning: `Classified using ML model with ${(setfitResult.predictions[0].confidence * 100).toFixed(1)}% confidence.`,
+            setfitUsed: true,
+            setfitLatency: setfitResult.latency_ms,
+          };
+        }
+      } else if (setfitResult) {
+        console.log(`[V10] SetFit low confidence (${(setfitResult.predictions[0]?.confidence * 100 || 0).toFixed(1)}%), falling back to semantic search`);
+      }
+    } catch (error) {
+      console.log('[V10] SetFit failed, falling back to semantic search:', error);
+    }
+  }
   
   // ─────────────────────────────────────────────────────────────────────────────
   // PHASE 2: SEARCH - Try Semantic Search First, Fallback to Keywords

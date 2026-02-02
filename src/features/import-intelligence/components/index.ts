@@ -10,3 +10,6 @@ export { BulkUpload } from './BulkUpload';
 export { ProcessingStatus } from './ProcessingStatus';
 export { PortfolioDashboard } from './PortfolioDashboard';
 export { MyPortfolioPage } from './MyPortfolioPage';
+export { LandedCostSection } from './LandedCostSection';
+export { TariffExplanationDrawer } from './TariffExplanationDrawer';
+export { CountryComparisonDrawer } from './CountryComparisonDrawer';

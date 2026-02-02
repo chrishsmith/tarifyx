@@ -127,20 +127,30 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
             key: 'landedCost',
             label: (
               <div className="flex items-center justify-between w-full">
-                <span className="font-semibold text-base">2. Landed Cost</span>
-                <Text strong className="text-lg text-slate-700">
+                <div className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-lg bg-teal-600 text-white flex items-center justify-center text-sm font-semibold">
+                    2
+                  </div>
+                  <span className="font-semibold text-base">Landed Cost</span>
+                </div>
+                <Text strong className="text-lg text-teal-700 font-mono">
                   {formatCurrency(landedCost.total)}
                 </Text>
               </div>
             ),
-            children: <LandedCostSection landedCost={landedCost} input={analysis.input} />,
+            children: <LandedCostSection landedCost={landedCost} input={analysis.input} classification={analysis.classification} />,
           },
           // 3. Country Comparison
           {
             key: 'countryComparison',
             label: (
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-base">3. Compare Countries</span>
+              <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-lg bg-purple-600 text-white flex items-center justify-center text-sm font-semibold">
+                    3
+                  </div>
+                  <span className="font-semibold text-base">Compare Countries</span>
+                </div>
                 <Tag color="green">{countryComparison.alternatives.length} alternatives</Tag>
               </div>
             ),
@@ -150,8 +160,13 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
           {
             key: 'compliance',
             label: (
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-base">4. Compliance & Risk</span>
+              <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-lg bg-amber-600 text-white flex items-center justify-center text-sm font-semibold">
+                    4
+                  </div>
+                  <span className="font-semibold text-base">Compliance & Risk</span>
+                </div>
                 {compliance.alerts.length > 0 && (
                   <Tag color="warning">{compliance.alerts.length} alerts ⚠️</Tag>
                 )}
@@ -163,8 +178,13 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
           {
             key: 'documentation',
             label: (
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-base">5. Documentation Required</span>
+              <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-sm font-semibold">
+                    5
+                  </div>
+                  <span className="font-semibold text-base">Documentation Required</span>
+                </div>
                 <Tag color="blue">
                   {documentation.critical.length + documentation.required.length} docs needed
                 </Tag>
@@ -176,8 +196,13 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
           {
             key: 'optimization',
             label: (
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-base">6. Optimization Opportunities</span>
+              <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-lg bg-green-600 text-white flex items-center justify-center text-sm font-semibold">
+                    6
+                  </div>
+                  <span className="font-semibold text-base">Optimization Opportunities</span>
+                </div>
                 <Text strong className="text-green-600">
                   ${optimization.totalPotentialSavings.toLocaleString('en-US')} savings
                 </Text>

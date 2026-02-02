@@ -1,0 +1,22 @@
+# Python ML Dependencies for HTS Classification
+# Install with: pip install -r scripts/requirements-ml.txt
+
+# SetFit for few-shot learning
+setfit>=1.0.0
+
+# HuggingFace datasets
+datasets>=2.14.0
+
+# PyTorch (CPU version for development, use GPU version for production)
+torch>=2.0.0
+
+# Scikit-learn for metrics
+scikit-learn>=1.3.0
+
+# Flask for inference server
+flask>=3.0.0
+
+# Optional: For full fine-tuning (DeBERTa)
+transformers>=4.30.0
+accelerate>=0.20.0
+peft>=0.4.0

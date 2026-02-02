@@ -1,0 +1,131 @@
+{
+  "totalSamples": 10,
+  "chapterAccuracy": 0,
+  "headingAccuracy": 0,
+  "subheadingAccuracy": 0,
+  "fullCodeAccuracy": 0,
+  "avgConfidence": 71.84323831558228,
+  "avgLatency": 157.2,
+  "results": [
+    {
+      "id": "cross-test-0",
+      "query": "cast carbon steel fittings made to ASTM A216 specification, comprised of two flanges connected with three nuts and bolts, used for connecting pipes",
+      "expectedCode": "7307199060",
+      "predictedCode": "6109100012",
+      "confidence": 68.65230733163668,
+      "latency": 199,
+      "chapterMatch": false,
+      "headingMatch": false,
+      "subheadingMatch": false,
+      "fullMatch": false
+    },
+    {
+      "id": "cross-test-1",
+      "query": "4[N-(2,4-Diamino-6-Pteridinylmethyl)-N-Methylamino] Benzoic Acid Sodium Salt",
+      "expectedCode": "2933597000",
+      "predictedCode": "6109100012",
+      "confidence": 73.89548005870101,
+      "latency": 183,
+      "chapterMatch": false,
+      "headingMatch": false,
+      "subheadingMatch": false,
+      "fullMatch": false
+    },
+    {
+      "id": "cross-test-2",
+      "query": "gasoline-powered spark ignition internal combustion piston engines used to operate various pumps",
+      "expectedCode": "8407909060",
+      "predictedCode": "6109100012",
+      "confidence": 81.64220234681967,
+      "latency": 197,
+      "chapterMatch": false,
+      "headingMatch": false,
+      "subheadingMatch": false,
+      "fullMatch": false
+    },
+    {
+      "id": "cross-test-3",
+      "query": "unvulcanized synthetic rubber in soft natural and standard natural forms from New Zealand",
+      "expectedCode": "4002800000",
+      "predictedCode": "6109100012",
+      "confidence": 92.38581902543008,
+      "latency": 117,
+      "chapterMatch": false,
+      "headingMatch": false,
+      "subheadingMatch": false,
+      "fullMatch": false
+    },
+    {
+      "id": "cross-test-4",
+      "query": "polyvinyl chloride (PVC) sheets used in furniture manufacturing",
+      "expectedCode": "3920490000",
+      "predictedCode": "6109100012",
+      "confidence": 68.30957859263934,
+      "latency": 108,
+      "chapterMatch": false,
+      "headingMatch": false,
+      "subheadingMatch": false,
+      "fullMatch": false
+    },
+    {
+      "id": "cross-test-6",
+      "query": "a polyurethane aqueous dispersion used in cosmetic formulations",
+      "expectedCode": "3909505000",
+      "predictedCode": "6109100012",
+      "confidence": 78.50580539855137,
+      "latency": 157,
+      "chapterMatch": false,
+      "headingMatch": false,
+      "subheadingMatch": false,
+      "fullMatch": false
+    },
+    {
+      "id": "cross-test-7",
+      "query": "plastic pallets made of high density polyethylene used for the delivery, storage, and transport of goods",
+      "expectedCode": "3923900000",
+      "predictedCode": "6109100012",
+      "confidence": 50.21444973326364,
+      "latency": 126,
+      "chapterMatch": false,
+      "headingMatch": false,
+      "subheadingMatch": false,
+      "fullMatch": false
+    },
+    {
+      "id": "cross-test-8",
+      "query": "a hydrogen gas sensor printed circuit board assembly",
+      "expectedCode": "9027102000",
+      "predictedCode": "6109100012",
+      "confidence": 51.43712279614672,
+      "latency": 140,
+      "chapterMatch": false,
+      "headingMatch": false,
+      "subheadingMatch": false,
+      "fullMatch": false
+    },
+    {
+      "id": "cross-test-9",
+      "query": "Aluminum isopropoxide, CAS No. 555-31-7",
+      "expectedCode": "2905199090",
+      "predictedCode": "6109100012",
+      "confidence": 85.8885465928094,
+      "latency": 161,
+      "chapterMatch": false,
+      "headingMatch": false,
+      "subheadingMatch": false,
+      "fullMatch": false
+    },
+    {
+      "id": "cross-test-10",
+      "query": "polyvinyl chloride (PVC) flooring with click-lock installation, consisting of a 4 mm PVC base, a .5 mm PVC backing, and a .5 mm decorative wood veneer layer",
+      "expectedCode": "3918101000",
+      "predictedCode": "6109100012",
+      "confidence": 67.50107127982508,
+      "latency": 184,
+      "chapterMatch": false,
+      "headingMatch": false,
+      "subheadingMatch": false,
+      "fullMatch": false
+    }
+  ]
+}

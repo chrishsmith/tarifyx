@@ -271,6 +271,20 @@ async function getFallbackLandedCost(
   // Calculate duty as percentage of product cost
   const dutyAsPercentOfProduct = input.value > 0 ? (totalDuty / input.value) * 100 : 0;
   
+  // Determine data quality and confidence based on tariff result
+  // High confidence if data came from registry with recent verification
+  const dataQuality: 'high' | 'medium' | 'low' = 
+    tariffResult.dataFreshness?.includes('verified') || tariffResult.dataFreshness?.includes('Live') 
+      ? 'high' 
+      : tariffResult.warnings?.length === 0 
+        ? 'medium' 
+        : 'low';
+  
+  // Confidence based on whether we have exact rates or estimates
+  // 95% for registry data, lower if using fallbacks
+  const tariffConfidence = tariffResult.dataFreshness?.includes('No data') ? 60 : 
+    tariffResult.warnings?.some(w => w.includes('estimated')) ? 75 : 90;
+  
   return {
     productValue: input.value,
     shipping,
@@ -303,6 +317,11 @@ async function getFallbackLandedCost(
     total,
     perUnit: total / input.quantity,
     dutyAsPercentOfProduct,
+    // New data quality fields
+    dataQuality,
+    lastUpdated: tariffResult.lastVerified,
+    tariffConfidence,
+    dataSource: 'Tariff Registry (USITC HTS API)',
   };
 }
 
