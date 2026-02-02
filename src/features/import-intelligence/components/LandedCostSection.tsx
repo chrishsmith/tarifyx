@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Button, Typography, Alert, Tooltip } from 'antd';
-import { ChevronDown, ChevronRight, Copy, Check, Info, Clock, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, Check, Info, Clock } from 'lucide-react';
 import type { ImportAnalysis } from '../types';
 import { TariffExplanationDrawer } from './TariffExplanationDrawer';
 import { CountryComparisonDrawer } from './CountryComparisonDrawer';
@@ -69,12 +69,18 @@ const CollapsibleSection: React.FC<{
 const LineItem: React.FC<{
   label: string;
   amount: number;
+  rate?: number;
   isDiscount?: boolean;
   isBold?: boolean;
-}> = ({ label, amount, isDiscount = false, isBold = false }) => (
+}> = ({ label, amount, rate, isDiscount = false, isBold = false }) => (
   <div className="flex items-center justify-between py-1">
     <Text className={`text-sm ${isDiscount ? 'text-emerald-600' : 'text-slate-600'} ${isBold ? 'font-semibold' : ''}`}>
       {label}
+      {rate !== undefined && (
+        <span className="ml-2 text-xs text-slate-400">
+          ({isDiscount ? '−' : ''}{Math.abs(rate).toFixed(2)}%)
+        </span>
+      )}
     </Text>
     <Text className={`text-sm ${isDiscount ? 'text-emerald-600' : 'text-slate-700'} ${isBold ? 'font-semibold' : 'font-medium'}`}>
       {isDiscount ? '−' : ''}{formatCurrency(Math.abs(amount))}
@@ -126,28 +132,17 @@ export const LandedCostSection: React.FC<LandedCostSectionProps> = ({ landedCost
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Confidence badge
-  const getConfidenceBadge = () => {
-    if (tariffConfidence >= 90) {
-      return { icon: ShieldCheck, label: 'High confidence', color: 'text-emerald-600', bg: 'bg-emerald-50' };
-    } else if (tariffConfidence >= 70) {
-      return { icon: ShieldCheck, label: 'Good confidence', color: 'text-blue-600', bg: 'bg-blue-50' };
-    } else {
-      return { icon: ShieldAlert, label: 'Estimated', color: 'text-amber-600', bg: 'bg-amber-50' };
-    }
-  };
-  const confidence = getConfidenceBadge();
 
   return (
     <div className="space-y-6">
       {/* Your Purchase */}
       <div>
-        <Text className="text-xs font-medium text-slate-500 uppercase tracking-wider block mb-2">
+        <div className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2">
           Your Purchase
-        </Text>
-        <Text className="text-lg font-medium text-slate-700">
+        </div>
+        <p className="text-lg font-semibold text-slate-700">
           {input.quantity.toLocaleString()} units × {productDescription} {htsCode && `(HTS: ${htsCode})`}
-        </Text>
+        </p>
       </div>
 
       {/* Total Landed Cost Box */}
@@ -160,17 +155,10 @@ export const LandedCostSection: React.FC<LandedCostSectionProps> = ({ landedCost
       >
         <div className="flex items-start justify-between">
           <div>
-            <div className="flex items-center gap-2 mb-2">
+            <div className="mb-2">
               <Text className="text-xs font-semibold text-indigo-600 uppercase tracking-wider">
                 Total Landed Cost
               </Text>
-              <button
-                onClick={copyTotal}
-                className="text-slate-400 hover:text-slate-600 p-1"
-                title="Copy total"
-              >
-                {copied ? <Check size={14} /> : <Copy size={14} />}
-              </button>
             </div>
             <Text className="text-4xl font-bold text-slate-900 block mb-1">
               {formatCurrency(landedCost.total)}
@@ -180,29 +168,13 @@ export const LandedCostSection: React.FC<LandedCostSectionProps> = ({ landedCost
             </Text>
           </div>
           <div className="flex flex-col items-end gap-2">
-            {/* Margin Impact - now dynamic */}
-            <div className="flex items-center gap-2">
-              <Tooltip title="Duties & fees as percentage of product value">
-                <Text className="text-xs font-medium text-slate-500 cursor-help">Duty Impact:</Text>
-              </Tooltip>
-              <div
-                className="px-3 py-1 rounded-full text-sm font-semibold"
-                style={{
-                  backgroundColor: marginImpactColor.bg,
-                  color: marginImpactColor.text,
-                  border: `1px solid ${marginImpactColor.border}`
-                }}
-              >
-                {marginImpact || `${landedCost.dutyAsPercentOfProduct?.toFixed(1) || '—'}%`}
-              </div>
+            {/* Total Tariff Rate - secondary to dollar amount */}
+            <div className="text-right">
+              <Text className="text-xs text-slate-500 block">Total Tariff Rate</Text>
+              <Text className="text-xl font-semibold text-slate-600">
+                {landedCost.duties.effectiveRate.toFixed(1)}%
+              </Text>
             </div>
-            {/* Confidence indicator */}
-            <Tooltip title={`Tariff accuracy: ${tariffConfidence}%${lastUpdated ? ` • Updated ${lastUpdated}` : ''}`}>
-              <div className={`flex items-center gap-1 px-2 py-0.5 rounded ${confidence.bg} cursor-help`}>
-                <confidence.icon size={12} className={confidence.color} />
-                <Text className={`text-xs ${confidence.color}`}>{confidence.label}</Text>
-              </div>
-            </Tooltip>
           </div>
         </div>
         
@@ -282,6 +254,7 @@ export const LandedCostSection: React.FC<LandedCostSectionProps> = ({ landedCost
             key={idx}
             label={layer.name}
             amount={layer.amount}
+            rate={layer.rate}
             isDiscount={layer.rate < 0}
           />
         ))}

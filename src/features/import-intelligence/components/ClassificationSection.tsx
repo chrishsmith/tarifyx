@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Button } from 'antd';
-import { Copy, Check, HelpCircle } from 'lucide-react';
+import { Button, Collapse } from 'antd';
+import { Copy, Check, HelpCircle, FileText, AlertTriangle, Scale } from 'lucide-react';
 import type { ImportAnalysis } from '../types';
 
 interface ClassificationSectionProps {
@@ -39,6 +39,14 @@ interface PathStep {
   code: string;
   level: string;
   description: string;
+  notes?: string[];
+  rulings?: Array<{
+    number: string;
+    excerpt: string;
+    date?: string;
+    url?: string;
+  }>;
+  exclusions?: string[];
 }
 
 // Parse classification path into steps
@@ -128,7 +136,7 @@ const parseClassificationPath = (path: string[], htsCode: string, description: s
     steps.push({ 
       code: clean.slice(0, 4), 
       level: 'HEADING', 
-      description: 'Heading classification' 
+      description: 'Heading classification'
     });
   }
   
@@ -137,7 +145,7 @@ const parseClassificationPath = (path: string[], htsCode: string, description: s
     steps.push({ 
       code: `${clean.slice(0, 4)}.${clean.slice(4, 6)}`, 
       level: 'SUBHEADING', 
-      description: 'Subheading classification' 
+      description: 'Subheading classification'
     });
   }
   
@@ -155,7 +163,7 @@ const parseClassificationPath = (path: string[], htsCode: string, description: s
     steps.push({ 
       code: formatHtsCode(htsCode), 
       level: 'HTS CODE', 
-      description 
+      description
     });
   }
   
@@ -167,12 +175,24 @@ export const ClassificationSection: React.FC<ClassificationSectionProps> = ({
   searchQuery 
 }) => {
   const [copied, setCopied] = useState(false);
+  const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
+  const [hoveredStep, setHoveredStep] = useState<number | null>(null);
   const confidenceBadge = getConfidenceBadge(classification.confidence);
   const pathSteps = parseClassificationPath(classification.path, classification.htsCode, classification.description);
   
   // Debug logging
   console.log('[ClassificationSection] Path data:', classification.path);
   console.log('[ClassificationSection] Parsed steps:', pathSteps);
+  
+  const toggleStep = (index: number) => {
+    const newExpanded = new Set(expandedSteps);
+    if (newExpanded.has(index)) {
+      newExpanded.delete(index);
+    } else {
+      newExpanded.add(index);
+    }
+    setExpandedSteps(newExpanded);
+  };
 
   const handleCopy = async () => {
     try {
@@ -234,47 +254,157 @@ export const ClassificationSection: React.FC<ClassificationSectionProps> = ({
           Classification Path:
         </div>
         
-        <div className="relative space-y-4">
+        <div className="relative">
           {pathSteps.map((step, idx) => {
             const isLast = idx === pathSteps.length - 1;
+            const isExpanded = expandedSteps.has(idx);
+            const isHovered = hoveredStep === idx;
+            const hasAdditionalInfo = (step.notes && step.notes.length > 0) || 
+                                     (step.rulings && step.rulings.length > 0) || 
+                                     (step.exclusions && step.exclusions.length > 0);
             
             return (
-              <div key={idx} className="flex items-start gap-4 relative">
-                {/* Vertical connector line */}
-                {!isLast && (
-                  <div 
-                    className="absolute left-[18px] top-9 w-0.5 bg-slate-200"
-                    style={{ height: 'calc(100% + 8px)' }}
-                  />
-                )}
-                
-                {/* Step number badge */}
+              <div key={idx} className="relative mb-4">
                 <div 
-                  className={`
-                    flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold z-10
-                    ${isLast 
-                      ? 'bg-blue-600 text-white shadow-md' 
-                      : 'bg-blue-100 text-blue-700'
-                    }
-                  `}
+                  className={`flex items-start gap-4 relative transition-all ${
+                    hasAdditionalInfo ? 'cursor-pointer' : ''
+                  }`}
+                  onMouseEnter={() => hasAdditionalInfo && setHoveredStep(idx)}
+                  onMouseLeave={() => hasAdditionalInfo && setHoveredStep(null)}
+                  onClick={() => hasAdditionalInfo && toggleStep(idx)}
                 >
-                  {idx + 1}
+                  {/* Vertical connector line - touches top circle, gap before bottom */}
+                  {!isLast && (
+                    <div 
+                      className="absolute left-[18px] top-9 bg-slate-200 z-0"
+                      style={{ width: '2px', height: 'calc(100% - 28px)' }}
+                    />
+                  )}
+                  
+                  {/* Step number badge with gradient */}
+                  <div 
+                    className={`
+                      flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold z-10 transition-all
+                      ${isLast 
+                        ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-md' 
+                        : isHovered && hasAdditionalInfo
+                          ? 'bg-gradient-to-br from-blue-200 to-blue-300 text-blue-800'
+                          : 'bg-gradient-to-br from-blue-100 to-blue-200 text-blue-700'
+                      }
+                    `}
+                  >
+                    {idx + 1}
+                  </div>
+                  
+                  {/* Step content */}
+                  <div className={`flex-1 rounded-lg p-2 -ml-2 transition-all ${
+                    isHovered && hasAdditionalInfo ? 'bg-blue-50' : ''
+                  }`}>
+                    <div className="flex items-center gap-3 mb-1">
+                      <span className={`font-bold ${isLast ? 'text-2xl text-slate-900' : 'text-xl text-slate-800'}`}>
+                        {step.code}
+                      </span>
+                      <span className={`text-xs font-semibold uppercase tracking-wider ${
+                        isLast ? 'text-blue-600' : 'text-slate-400'
+                      }`}>
+                        {step.level}
+                      </span>
+                      {hasAdditionalInfo && (
+                        <div className="flex items-center gap-2 ml-auto">
+                          {step.notes && step.notes.length > 0 && (
+                            <div className="flex items-center gap-1 text-xs text-slate-500">
+                              <FileText size={14} />
+                              <span>{step.notes.length}</span>
+                            </div>
+                          )}
+                          {step.rulings && step.rulings.length > 0 && (
+                            <div className="flex items-center gap-1 text-xs text-slate-500">
+                              <Scale size={14} />
+                              <span>{step.rulings.length}</span>
+                            </div>
+                          )}
+                          {step.exclusions && step.exclusions.length > 0 && (
+                            <div className="flex items-center gap-1 text-xs text-slate-500">
+                              <AlertTriangle size={14} />
+                              <span>{step.exclusions.length}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <p className={`text-base ${isLast ? 'text-slate-700 font-medium' : 'text-slate-600'}`}>
+                      {step.description}
+                    </p>
+                  </div>
                 </div>
                 
-                {/* Step content */}
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-1">
-                    <span className={`font-bold ${isLast ? 'text-2xl text-slate-900' : 'text-xl text-slate-800'}`}>
-                      {step.code}
-                    </span>
-                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                      {step.level}
-                    </span>
+                {/* Expanded content */}
+                {isExpanded && hasAdditionalInfo && (
+                  <div className="ml-16 mt-3 space-y-3 pb-2">
+                    {/* Notes */}
+                    {step.notes && step.notes.length > 0 && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <FileText size={16} className="text-blue-600" />
+                          <span className="font-semibold text-blue-900 text-sm">Notes</span>
+                        </div>
+                        <ul className="space-y-1 text-sm text-slate-700">
+                          {step.notes.map((note, i) => (
+                            <li key={i} className="leading-relaxed">• {note}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    
+                    {/* Rulings */}
+                    {step.rulings && step.rulings.length > 0 && (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Scale size={16} className="text-green-600" />
+                          <span className="font-semibold text-green-900 text-sm">Relevant Rulings</span>
+                        </div>
+                        <div className="space-y-2">
+                          {step.rulings.map((ruling, i) => (
+                            <div key={i} className="text-sm">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-semibold text-green-700">{ruling.number}</span>
+                                {ruling.date && (
+                                  <span className="text-xs text-slate-500">{ruling.date}</span>
+                                )}
+                              </div>
+                              <p className="text-slate-700 mt-1">{ruling.excerpt}</p>
+                              {ruling.url && (
+                                <a 
+                                  href={ruling.url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-green-600 hover:underline mt-1 inline-block"
+                                >
+                                  View full ruling →
+                                </a>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Exclusions */}
+                    {step.exclusions && step.exclusions.length > 0 && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <AlertTriangle size={16} className="text-amber-600" />
+                          <span className="font-semibold text-amber-900 text-sm">Exclusions</span>
+                        </div>
+                        <ul className="space-y-1 text-sm text-slate-700">
+                          {step.exclusions.map((exclusion, i) => (
+                            <li key={i} className="leading-relaxed">• {exclusion}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
-                  <p className={`text-base ${isLast ? 'text-slate-700 font-medium' : 'text-slate-600'}`}>
-                    {step.description}
-                  </p>
-                </div>
+                )}
               </div>
             );
           })}

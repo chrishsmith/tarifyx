@@ -126,16 +126,11 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
           {
             key: 'landedCost',
             label: (
-              <div className="flex items-center justify-between w-full">
-                <div className="flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-teal-600 text-white flex items-center justify-center text-sm font-semibold">
-                    2
-                  </div>
-                  <span className="font-semibold text-base">Landed Cost</span>
+              <div className="flex items-center gap-3">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600 text-white flex items-center justify-center text-sm font-semibold">
+                  2
                 </div>
-                <Text strong className="text-lg text-teal-700 font-mono">
-                  {formatCurrency(landedCost.total)}
-                </Text>
+                <span className="font-semibold text-base">Landed Cost</span>
               </div>
             ),
             children: <LandedCostSection landedCost={landedCost} input={analysis.input} classification={analysis.classification} />,
@@ -146,7 +141,7 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
             label: (
               <div className="flex items-center justify-between w-full">
                 <div className="flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-purple-600 text-white flex items-center justify-center text-sm font-semibold">
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 text-white flex items-center justify-center text-sm font-semibold">
                     3
                   </div>
                   <span className="font-semibold text-base">Compare Countries</span>
@@ -162,7 +157,7 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
             label: (
               <div className="flex items-center justify-between w-full">
                 <div className="flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-amber-600 text-white flex items-center justify-center text-sm font-semibold">
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500 to-amber-600 text-white flex items-center justify-center text-sm font-semibold">
                     4
                   </div>
                   <span className="font-semibold text-base">Compliance & Risk</span>
@@ -180,7 +175,7 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
             label: (
               <div className="flex items-center justify-between w-full">
                 <div className="flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-sm font-semibold">
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 text-white flex items-center justify-center text-sm font-semibold">
                     5
                   </div>
                   <span className="font-semibold text-base">Documentation Required</span>
@@ -198,7 +193,7 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
             label: (
               <div className="flex items-center justify-between w-full">
                 <div className="flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-green-600 text-white flex items-center justify-center text-sm font-semibold">
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-green-500 to-green-600 text-white flex items-center justify-center text-sm font-semibold">
                     6
                   </div>
                   <span className="font-semibold text-base">Optimization Opportunities</span>

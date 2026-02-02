@@ -24,6 +24,17 @@ export interface HTSHierarchyLevel {
     siblings?: HTSSibling[];
     /** Quick count for UI indicator */
     siblingCount?: number;
+    /** Legal notes and requirements for this level */
+    notes?: string[];
+    /** Relevant CBP rulings */
+    rulings?: Array<{
+        number: string;
+        excerpt: string;
+        date?: string;
+        url?: string;
+    }>;
+    /** Exclusions - what this code does NOT include */
+    exclusions?: string[];
 }
 
 export interface HTSHierarchy {
