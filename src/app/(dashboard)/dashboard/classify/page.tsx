@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 
-// Redirect /dashboard/classify to /dashboard/classifications
-// All classification functionality is now consolidated there
+// Redirect /dashboard/classify to /dashboard/import/analyze
+// Main classification entry point is Import Intelligence
 export default function ClassifyRedirect() {
-    redirect('/dashboard/classifications');
+    redirect('/dashboard/import/analyze');
 }

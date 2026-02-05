@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
     Card, Typography, Input, Button, Tag, Tooltip, 
-    Spin, Select, message 
+    Spin, Select, Checkbox, message 
 } from 'antd';
 import { 
     CheckCircle, AlertTriangle, Copy, ChevronRight,
-    Zap, Bookmark, Globe, ArrowRight, Scale, Crown, Sparkles, TrendingDown, DollarSign
+    Zap, Bookmark, Globe, ArrowRight, Scale, Crown, Sparkles, TrendingDown, DollarSign,
+    List, Hash
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -27,6 +28,8 @@ interface OptimizerTeaser {
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
+const MAX_DESCRIPTION_LENGTH = 2000;
+const INPUT_DEBOUNCE_MS = 300;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES (matching V10 API response)
@@ -207,7 +210,7 @@ export interface ClassificationV10LayoutBProps {
 
 export default function ClassificationV10LayoutB({
     initialDescription = '',
-    initialOrigin = 'CN',
+    initialOrigin = '',
     initialMaterial,
     autoClassify = false,
     onClassifyComplete,
@@ -222,6 +225,11 @@ export default function ClassificationV10LayoutB({
     const [optimizerTeaser, setOptimizerTeaser] = useState<OptimizerTeaser | null>(null);
     const [loadingTeaser, setLoadingTeaser] = useState(false);
     const [hasAutoClassified, setHasAutoClassified] = useState(false);
+    const [inputMode, setInputMode] = useState<'describe' | 'hts' | 'saved'>('describe');
+    const [productValue, setProductValue] = useState('');
+    const [quantity, setQuantity] = useState('');
+    const [additionalDetails, setAdditionalDetails] = useState<string[]>(['lithium_battery']);
+    const lastActionRef = useRef<number>(0);
 
     // Update state when initial values change (for re-classify)
     useEffect(() => {
@@ -298,10 +306,31 @@ export default function ClassificationV10LayoutB({
     }, [result, origin]);
 
     const handleClassify = async () => {
+        const now = Date.now();
+        if (now - lastActionRef.current < INPUT_DEBOUNCE_MS) {
+            return;
+        }
+        lastActionRef.current = now;
+
         if (!description.trim()) {
             messageApi.warning('Please enter a product description');
             return;
         }
+        if (!origin) {
+            messageApi.warning('Please select a country of origin');
+            return;
+        }
+
+        console.info('[classification_v10] classify', {
+            ts: new Date().toISOString(),
+            inputMode,
+            origin,
+            hasDescription: Boolean(description.trim()),
+            hasMaterial: Boolean(material),
+            hasProductValue: Boolean(productValue),
+            hasQuantity: Boolean(quantity),
+            additionalDetailsCount: additionalDetails.length,
+        });
 
         await performClassification();
     };
@@ -316,6 +345,12 @@ export default function ClassificationV10LayoutB({
         setLoading(true);
         setResult(null);
         setSelectedAltIndex(null);
+
+        console.info('[classification_v10] performClassification', {
+            ts: new Date().toISOString(),
+            origin,
+            hasMaterial: Boolean(material),
+        });
 
         try {
             const response = await fetch('/api/classify-v10', {
@@ -437,17 +472,18 @@ export default function ClassificationV10LayoutB({
         { value: 'ID', label: '🇮🇩 Indonesia' },
     ];
 
-    const materialOptions = [
-        { value: 'plastic', label: 'Plastic' },
-        { value: 'metal', label: 'Metal' },
-        { value: 'wood', label: 'Wood' },
-        { value: 'cotton', label: 'Cotton' },
-        { value: 'polyester', label: 'Polyester' },
-        { value: 'leather', label: 'Leather' },
-        { value: 'glass', label: 'Glass' },
-        { value: 'ceramic', label: 'Ceramic' },
-        { value: 'rubber', label: 'Rubber' },
-        { value: 'paper', label: 'Paper' },
+    const inputModeOptions = [
+        { value: 'describe', label: 'Describe my product', icon: List },
+        { value: 'hts', label: 'I have an HTS code', icon: Hash },
+        { value: 'saved', label: 'Use saved product', icon: Bookmark },
+    ] as const;
+    const additionalDetailOptions = [
+        { value: 'lithium_battery', label: 'Contains lithium battery' },
+        { value: 'hazardous_materials', label: 'Contains chemicals/hazardous materials' },
+        { value: 'children_product', label: 'For children (under 12)' },
+        { value: 'food_contact', label: 'Food or food contact' },
+        { value: 'wireless_rf', label: 'Wireless/radio frequency' },
+        { value: 'medical_device', label: 'Medical device' },
     ];
 
     const getCountryLabel = (code: string) => countryOptions.find(c => c.value === code)?.label || code;
@@ -458,65 +494,148 @@ export default function ClassificationV10LayoutB({
     return (
         <>
             {contextHolder}
-            <div className="max-w-6xl mx-auto flex flex-col gap-5">
+            <div className="max-w-5xl mx-auto flex flex-col gap-6">
                 {/* Input Card - Only show when no results */}
                 {showInputForm && (
-                    <Card className="border-slate-200 shadow-sm">
-                        <div className="flex items-center gap-3 mb-5">
-                            <div className="p-2 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl">
-                                <Zap size={20} className="text-white" />
-                            </div>
-                            <div>
-                                <Title level={5} className="m-0">HTS Classification</Title>
-                                <Text type="secondary" className="text-sm">Enter your product details to get started</Text>
-                            </div>
+                    <div
+                        className="rounded-3xl bg-gradient-to-br from-slate-50 to-slate-100 p-8"
+                        data-component-id="classification_initial_search"
+                    >
+                        <div className="mb-6">
+                            <Title level={2} className="!mb-1">
+                                <span className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">
+                                    HTS Classification
+                                </span>
+                            </Title>
+                            <Text className="text-slate-600">Bringing the sexy back to logistics</Text>
                         </div>
 
-                        <div className="flex gap-4 items-end">
-                            <div className="flex-[2]">
-                                <Text strong className="block mb-1.5 text-sm">Product Description</Text>
-                                <TextArea
-                                    value={description}
-                                    onChange={(e) => setDescription(e.target.value)}
-                                    placeholder="e.g., ceramic coffee mug, mens cotton t-shirt"
-                                    rows={1}
-                                    disabled={loading}
-                                    autoSize={{ minRows: 1, maxRows: 3 }}
-                                />
+                        <div className="rounded-2xl border border-slate-200 bg-white shadow-[0_20px_25px_-5px_rgba(0,0,0,0.1),0_8px_10px_-6px_rgba(0,0,0,0.1)] overflow-hidden">
+                            <div className="bg-gradient-to-b from-slate-50 to-white border-b border-slate-200 px-8 py-6">
+                                <div className="flex items-center gap-3">
+                                    <div className="h-10 w-10 rounded-[14px] bg-gradient-to-br from-blue-500 to-violet-600 text-white flex items-center justify-center font-bold shadow-lg">
+                                        1
+                                    </div>
+                                    <Title level={4} className="!m-0 text-slate-900">Product Information</Title>
+                                </div>
                             </div>
-                            <div className="flex-1">
-                                <Text strong className="block mb-1.5 text-sm">Origin</Text>
-                                <Select
-                                    value={origin}
-                                    onChange={setOrigin}
-                                    className="w-full"
-                                    disabled={loading}
-                                    options={countryOptions}
-                                />
+
+                            <div className="px-8 py-6">
+                                <Text className="text-slate-600 text-sm">
+                                    How would you like to identify your product?
+                                </Text>
+                                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-2">
+                                    {inputModeOptions.map((option) => {
+                                        const Icon = option.icon;
+                                        const isActive = inputMode === option.value;
+                                        return (
+                                            <button
+                                                key={option.value}
+                                                type="button"
+                                                onClick={() => setInputMode(option.value)}
+                                                className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                                                    isActive
+                                                        ? 'bg-slate-100 border-slate-300 text-slate-900'
+                                                        : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                                                }`}
+                                            >
+                                                <Icon size={16} className={isActive ? 'text-slate-900' : 'text-slate-400'} />
+                                                {option.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                <div className="mt-4">
+                                    <TextArea
+                                        value={description}
+                                        onChange={(e) => setDescription(e.target.value)}
+                                        placeholder={'Describe your product in detail... e.g., "Cotton t-shirts, 100% cotton, knit fabric, short sleeve, for adults, printed designs"'}
+                                        disabled={loading}
+                                        autoSize={{ minRows: 4, maxRows: 8 }}
+                                        maxLength={MAX_DESCRIPTION_LENGTH}
+                                        showCount={{ formatter: ({ count, maxLength }) => `${count} / ${maxLength}` }}
+                                        className="!rounded-lg"
+                                    />
+                                </div>
+
+                                <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div>
+                                        <Text className="block text-sm text-slate-700 mb-2">
+                                            <span className="text-red-500">*</span> Country of Origin
+                                        </Text>
+                                        <Select
+                                            value={origin || undefined}
+                                            onChange={setOrigin}
+                                            className="w-full"
+                                            disabled={loading}
+                                            placeholder="Select country"
+                                            options={countryOptions}
+                                            size="large"
+                                        />
+                                    </div>
+                                    <div>
+                                        <Text className="block text-sm text-slate-700 mb-2">
+                                            <span className="text-red-500">*</span> Product Value (USD)
+                                        </Text>
+                                        <Input
+                                            value={productValue}
+                                            onChange={(e) => setProductValue(e.target.value)}
+                                            placeholder="10,000"
+                                            size="large"
+                                            prefix="$"
+                                            inputMode="decimal"
+                                        />
+                                    </div>
+                                    <div>
+                                        <Text className="block text-sm text-slate-700 mb-2">
+                                            <span className="text-red-500">*</span> Quantity (units)
+                                        </Text>
+                                        <Input
+                                            value={quantity}
+                                            onChange={(e) => setQuantity(e.target.value)}
+                                            placeholder="1,000"
+                                            size="large"
+                                            inputMode="numeric"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="mt-6">
+                                    <Text className="text-slate-600 text-sm">
+                                        Additional Details (improves accuracy):
+                                    </Text>
+                                    <Checkbox.Group
+                                        value={additionalDetails}
+                                        onChange={(values) => setAdditionalDetails(values as string[])}
+                                        className="w-full mt-3"
+                                    >
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                            {additionalDetailOptions.map((option) => (
+                                                <Checkbox key={option.value} value={option.value} className="text-slate-600">
+                                                    {option.label}
+                                                </Checkbox>
+                                            ))}
+                                        </div>
+                                    </Checkbox.Group>
+                                </div>
+
+                                <div className="mt-6">
+                                    <Button
+                                        type="primary"
+                                        onClick={handleClassify}
+                                        loading={loading}
+                                        disabled={!description.trim()}
+                                        size="large"
+                                        className="bg-gradient-to-b from-blue-600 to-violet-600 border-none shadow-lg px-6"
+                                    >
+                                        Analyze Product
+                                        <ChevronRight size={16} className="ml-2" />
+                                    </Button>
+                                </div>
                             </div>
-                            <div className="flex-1">
-                                <Text strong className="block mb-1.5 text-sm">Material</Text>
-                                <Select
-                                    value={material}
-                                    onChange={setMaterial}
-                                    className="w-full"
-                                    allowClear
-                                    placeholder="Auto"
-                                    disabled={loading}
-                                    options={materialOptions}
-                                />
-                            </div>
-                            <Button
-                                type="primary"
-                                onClick={handleClassify}
-                                loading={loading}
-                                disabled={!description.trim()}
-                                className="bg-cyan-600 hover:bg-cyan-700 border-none"
-                            >
-                                {loading ? 'Classifying...' : 'Classify Product'}
-                            </Button>
                         </div>
-                    </Card>
+                    </div>
                 )}
 
                 {/* Loading State */}

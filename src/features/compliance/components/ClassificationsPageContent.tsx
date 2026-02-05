@@ -29,6 +29,7 @@ export const ClassificationsPageContent = () => {
     
     const [activeTab, setActiveTab] = useState(initialTab);
     const [viewingResult, setViewingResult] = useState<ClassificationResult | null>(null);
+    const isClassifyTab = activeTab === 'classify';
     
     // Sync activeTab when URL params change
     useEffect(() => {
@@ -153,21 +154,35 @@ export const ClassificationsPageContent = () => {
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
                 <div>
-                    <Title level={2} className="!mb-1">Classifications</Title>
-                    <Text type="secondary">Classify products, view history, and manage your product library.</Text>
+                    <Title level={2} className="!mb-1">
+                        {isClassifyTab ? (
+                            <span className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">
+                                HTS Classification
+                            </span>
+                        ) : (
+                            'Classifications'
+                        )}
+                    </Title>
+                    <Text type="secondary">
+                        {isClassifyTab
+                            ? 'Bringing the sexy back to logistics'
+                            : 'Classify products, view history, and manage your product library.'}
+                    </Text>
                 </div>
-                <Button 
-                    type="primary" 
-                    icon={<UploadIcon size={18} />} 
-                    className="bg-teal-600 w-full sm:w-auto"
-                    onClick={handleBulkClassify}
-                >
-                    Bulk Import
-                </Button>
+                {!isClassifyTab && (
+                    <Button 
+                        type="primary" 
+                        icon={<UploadIcon size={18} />} 
+                        className="bg-teal-600 w-full sm:w-auto"
+                        onClick={handleBulkClassify}
+                    >
+                        Bulk Import
+                    </Button>
+                )}
             </div>
 
             {/* Main Content Card */}
-            <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-slate-100 w-full">
+            <div className={`w-full ${isClassifyTab ? 'bg-transparent p-0 shadow-none border-none' : 'bg-white p-4 md:p-6 rounded-xl shadow-sm border border-slate-100'}`}>
                 <Tabs
                     activeKey={activeTab}
                     onChange={handleTabChange}

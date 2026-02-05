@@ -103,19 +103,15 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             label: 'Overview',
         },
         {
-            key: '/dashboard/classifications',
+            key: '/dashboard/import/analyze',
             icon: <Sparkles size={18} />,
-            label: 'Classify',
+            label: 'Analyze Product',
         },
         {
             key: 'import',
             icon: <Compass size={18} />,
             label: 'Import Intelligence',
             children: [
-                {
-                    key: '/dashboard/import/analyze',
-                    label: 'Analyze Product',
-                },
                 {
                     key: '/dashboard/import/bulk',
                     label: 'Bulk Analysis',
@@ -233,9 +229,9 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
 
     // Get selected key - handle route variations and sub-menu items
     const getSelectedKey = () => {
-        // Handle classify routes
+        // Handle classify routes (legacy) + analyze
         if (pathname.startsWith('/dashboard/classify') || pathname.startsWith('/dashboard/classifications')) {
-            return '/dashboard/classifications';
+            return '/dashboard/import/analyze';
         }
         if (pathname.startsWith('/dashboard/monitoring')) {
             return '/dashboard/products';
@@ -295,7 +291,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
     // Get open sub-menus based on current path - initialize on mount and pathname change
     useEffect(() => {
         const keys: string[] = [];
-        if (pathname.startsWith('/dashboard/import')) {
+        if (pathname.startsWith('/dashboard/import/bulk') || pathname.startsWith('/dashboard/import/portfolio')) {
             keys.push('import');
         }
         if (pathname.startsWith('/dashboard/duties') || pathname.startsWith('/dashboard/optimizer')) {
