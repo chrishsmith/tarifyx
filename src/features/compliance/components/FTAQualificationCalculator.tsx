@@ -133,7 +133,8 @@ interface SavedBOM {
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const STORAGE_KEY = 'sourcify_fta_saved_boms';
+const STORAGE_KEY = 'tarifyx_fta_saved_boms';
+const OLD_STORAGE_KEY = 'sourcify_fta_saved_boms';
 
 // FTA options
 const FTA_OPTIONS = [
@@ -193,6 +194,15 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
     
     useEffect(() => {
         try {
+            // Auto-migrate from old sourcify key if new key is empty
+            if (key === STORAGE_KEY) {
+                const newItem = window.localStorage.getItem(key);
+                const oldItem = window.localStorage.getItem(OLD_STORAGE_KEY);
+                if (!newItem && oldItem) {
+                    window.localStorage.setItem(key, oldItem);
+                    window.localStorage.removeItem(OLD_STORAGE_KEY);
+                }
+            }
             const item = window.localStorage.getItem(key);
             if (item) {
                 setStoredValue(JSON.parse(item));

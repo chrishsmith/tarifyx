@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Layout, Menu, Button, Avatar, Dropdown, Drawer, Spin } from 'antd';
+import { Layout, Menu, Button, Avatar, Dropdown, Drawer } from 'antd';
 import type { MenuProps } from 'antd';
 import {
     LayoutDashboard,
@@ -13,27 +13,17 @@ import {
     ChevronLeft,
     ChevronRight,
     Anchor,
-    Globe,
     Menu as MenuIcon,
     X,
-    Lock,
     Crown,
-    FlaskConical,
-    Scale,
     Calculator,
     Shield,
-    AlertTriangle,
-    FileCheck,
     BarChart3,
-    Handshake,
-    ClipboardCheck,
-    ListChecks,
-    History,
     BellRing,
-    Compass,
 } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
-import { useSession } from '@/lib/auth-client';
+import { useSession, authClient } from '@/lib/auth-client';
+import { LoadingState } from '@/components/shared/LoadingState';
 
 const { Header, Sider, Content } = Layout;
 
@@ -100,32 +90,17 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
         {
             key: '/dashboard',
             icon: <LayoutDashboard size={18} />,
-            label: 'Overview',
+            label: 'Dashboard',
         },
         {
             key: '/dashboard/import/analyze',
             icon: <Sparkles size={18} />,
-            label: 'Analyze Product',
+            label: 'Classify Product',
         },
         {
-            key: 'import',
-            icon: <Compass size={18} />,
-            label: 'Import Intelligence',
-            children: [
-                {
-                    key: '/dashboard/import/bulk',
-                    label: 'Bulk Analysis',
-                },
-                {
-                    key: '/dashboard/import/portfolio',
-                    label: 'My Portfolio',
-                },
-            ],
-        },
-        {
-            key: 'duties',
+            key: 'landed-cost',
             icon: <Calculator size={18} />,
-            label: 'Duties',
+            label: 'Landed Cost',
             children: [
                 {
                     key: '/dashboard/duties/calculator',
@@ -135,7 +110,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                     key: '/dashboard/optimizer',
                     label: (
                         <span className="flex items-center gap-2">
-                            Optimizer
+                            Country Comparison
                             {!isPro && <Crown size={12} className="text-amber-500" />}
                         </span>
                     ),
@@ -185,40 +160,20 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
         {
             key: '/dashboard/products',
             icon: <FolderOpen size={18} />,
-            label: 'My Products',
+            label: (
+                <span className="flex items-center gap-2">
+                    My Products
+                    <BellRing size={12} className="text-slate-400" />
+                </span>
+            ),
         },
         {
-            key: 'intelligence',
+            key: '/dashboard/intelligence/trade-stats',
             icon: <BarChart3 size={18} />,
-            label: 'Intelligence',
-            children: [
-                {
-                    key: '/dashboard/intelligence/trade-stats',
-                    label: 'Trade Stats',
-                },
-                {
-                    key: '/dashboard/sourcing',
-                    label: (
-                        <span className="flex items-center gap-2">
-                            Sourcing
-                            {!isPro && <Crown size={12} className="text-amber-500" />}
-                        </span>
-                    ),
-                },
-            ],
-        },
-        {
-            key: '/dashboard/compliance/alerts',
-            icon: <BellRing size={18} />,
-            label: 'Alerts',
+            label: 'Trade Stats',
         },
         {
             type: 'divider',
-        },
-        {
-            key: '/dashboard/roadmap',
-            icon: <FlaskConical size={18} />,
-            label: 'Feature Lab',
         },
         {
             key: '/dashboard/settings',
@@ -229,78 +184,48 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
 
     // Get selected key - handle route variations and sub-menu items
     const getSelectedKey = () => {
-        // Handle classify routes (legacy) + analyze
+        // Legacy classify routes → Classify Product
         if (pathname.startsWith('/dashboard/classify') || pathname.startsWith('/dashboard/classifications')) {
             return '/dashboard/import/analyze';
         }
+        // Legacy monitoring → My Products
         if (pathname.startsWith('/dashboard/monitoring')) {
             return '/dashboard/products';
         }
-        // Import Intelligence sub-items
-        if (pathname.startsWith('/dashboard/import/analyze')) {
+        // Classify Product (analyze)
+        if (pathname.startsWith('/dashboard/import')) {
             return '/dashboard/import/analyze';
         }
-        if (pathname.startsWith('/dashboard/import/bulk')) {
-            return '/dashboard/import/bulk';
-        }
-        if (pathname.startsWith('/dashboard/import/portfolio')) {
-            return '/dashboard/import/portfolio';
-        }
-        // Duties sub-items
+        // Landed Cost sub-items
         if (pathname.startsWith('/dashboard/duties/calculator')) {
             return '/dashboard/duties/calculator';
         }
         if (pathname.startsWith('/dashboard/optimizer')) {
             return '/dashboard/optimizer';
         }
-        // Intelligence sub-items
+        // Trade Stats
         if (pathname.startsWith('/dashboard/intelligence/trade-stats')) {
             return '/dashboard/intelligence/trade-stats';
         }
-        if (pathname.startsWith('/dashboard/sourcing')) {
-            return '/dashboard/sourcing';
-        }
         // Compliance sub-items
-        if (pathname === '/dashboard/compliance/alerts') {
-            return '/dashboard/compliance/alerts';
-        }
-        if (pathname.startsWith('/dashboard/compliance/denied-party')) {
-            return '/dashboard/compliance/denied-party';
-        }
-        if (pathname.startsWith('/dashboard/compliance/addcvd')) {
-            return '/dashboard/compliance/addcvd';
-        }
-        if (pathname.startsWith('/dashboard/compliance/fta-rules')) {
-            return '/dashboard/compliance/fta-rules';
-        }
-        if (pathname.startsWith('/dashboard/compliance/fta-calculator')) {
-            return '/dashboard/compliance/fta-calculator';
-        }
-        if (pathname.startsWith('/dashboard/compliance/pga')) {
-            return '/dashboard/compliance/pga';
-        }
-        if (pathname.startsWith('/dashboard/compliance/tariff-tracker')) {
-            return '/dashboard/compliance/tariff-tracker';
-        }
-        if (pathname.startsWith('/dashboard/compliance/hts-history')) {
-            return '/dashboard/compliance/hts-history';
-        }
+        if (pathname.startsWith('/dashboard/compliance/denied-party')) return '/dashboard/compliance/denied-party';
+        if (pathname.startsWith('/dashboard/compliance/addcvd')) return '/dashboard/compliance/addcvd';
+        if (pathname.startsWith('/dashboard/compliance/fta-rules')) return '/dashboard/compliance/fta-rules';
+        if (pathname.startsWith('/dashboard/compliance/fta-calculator')) return '/dashboard/compliance/fta-calculator';
+        if (pathname.startsWith('/dashboard/compliance/pga')) return '/dashboard/compliance/pga';
+        if (pathname.startsWith('/dashboard/compliance/tariff-tracker')) return '/dashboard/compliance/tariff-tracker';
+        if (pathname.startsWith('/dashboard/compliance/hts-history')) return '/dashboard/compliance/hts-history';
+        if (pathname.startsWith('/dashboard/compliance/alerts')) return '/dashboard/products';
         return pathname;
     };
     
     // Get open sub-menus based on current path - initialize on mount and pathname change
     useEffect(() => {
         const keys: string[] = [];
-        if (pathname.startsWith('/dashboard/import/bulk') || pathname.startsWith('/dashboard/import/portfolio')) {
-            keys.push('import');
-        }
         if (pathname.startsWith('/dashboard/duties') || pathname.startsWith('/dashboard/optimizer')) {
-            keys.push('duties');
+            keys.push('landed-cost');
         }
-        if (pathname.startsWith('/dashboard/intelligence') || pathname.startsWith('/dashboard/sourcing')) {
-            keys.push('intelligence');
-        }
-        if (pathname.startsWith('/dashboard/compliance') && pathname !== '/dashboard/compliance/alerts') {
+        if (pathname.startsWith('/dashboard/compliance')) {
             keys.push('compliance');
         }
         setOpenKeys(keys);
@@ -316,7 +241,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                 <Anchor className="w-5 h-5 text-white" />
             </div>
             {showText && (
-                <span className="font-semibold text-lg text-slate-900">Sourcify</span>
+                <span className="font-semibold text-lg text-slate-900">Tarifyx</span>
             )}
         </div>
     );
@@ -372,6 +297,16 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
     const userEmail = session?.user?.email || '';
     const userInitials = getUserInitials(session?.user?.name);
 
+    const handleSignOut = async () => {
+        try {
+            await authClient.signOut();
+        } catch (err) {
+            console.error('[DashboardLayout] sign_out_error', { ts: new Date().toISOString(), error: err });
+        } finally {
+            router.push('/login');
+        }
+    };
+
     const UserMenu = () => (
         <Dropdown
             menu={{
@@ -383,7 +318,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                         icon: <LogOut size={14} />, 
                         label: 'Sign Out', 
                         danger: true, 
-                        onClick: () => router.push('/login') 
+                        onClick: handleSignOut,
                     }
                 ]
             }}
@@ -402,28 +337,17 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
 
     // Get page title from pathname
     const getPageTitle = () => {
-        // Handle import intelligence routes
         if (pathname.startsWith('/dashboard/import')) {
-            if (pathname.includes('/analyze')) return 'Analyze Product';
-            if (pathname.includes('/bulk')) return 'Bulk Analysis';
-            if (pathname.includes('/portfolio')) return 'My Portfolio';
-            return 'Import Intelligence';
+            return 'Classify Product';
         }
         
         const segment = pathname.split('/').pop() || 'dashboard';
         const titles: Record<string, string> = {
-            'dashboard': 'Overview',
-            'classifications': 'Classify',
-            'classify': 'Classify Product',
-            'bulk': 'Bulk Classification',
+            'dashboard': 'Dashboard',
             'products': 'My Products',
-            'sourcing': 'Sourcing Intelligence',
-            'roadmap': 'Feature Lab',
             'settings': 'Settings',
-            'duties': 'Duties',
             'calculator': 'Landed Cost Calculator',
-            'optimizer': 'Duty Optimizer',
-            'compliance': 'Compliance',
+            'optimizer': 'Country Comparison',
             'denied-party': 'Denied Party Screening',
             'addcvd': 'ADD/CVD Lookup',
             'pga': 'PGA Requirements',
@@ -431,9 +355,10 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             'fta-calculator': 'FTA Qualification Calculator',
             'tariff-tracker': 'Section 301/IEEPA Tariff Tracker',
             'hts-history': 'HTS Code History',
-            'alerts': 'Compliance Alerts',
-            'intelligence': 'Intelligence',
             'trade-stats': 'Trade Statistics',
+            'sourcing': 'Product Sourcing',
+            'suppliers': 'Supplier Explorer',
+            'roadmap': 'Roadmap',
         };
         return titles[segment] || segment.replace('-', ' ');
     };
@@ -442,10 +367,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
     if (isSessionLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-50">
-                <div className="text-center">
-                    <Spin size="large" />
-                    <p className="mt-4 text-slate-500">Loading...</p>
-                </div>
+                <LoadingState size="large" message="Loading..." />
             </div>
         );
     }

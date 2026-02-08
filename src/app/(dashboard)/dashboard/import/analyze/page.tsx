@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { message } from 'antd';
 import { ProductInputSection } from '@/features/import-intelligence/components/ProductInputSection';
 import { ResultsContainer } from '@/features/import-intelligence/components/ResultsContainer';
 import type { ProductInput, ImportAnalysis } from '@/features/import-intelligence/types';
@@ -26,8 +27,8 @@ export default function AnalyzePage() {
       
       setAnalysis(data.analysis);
     } catch (error) {
-      console.error('Analysis failed:', error);
-      alert('Analysis failed. Please try again.');
+      console.error('[AnalyzePage] analyze_failed', { ts: new Date().toISOString(), error });
+      message.error('Analysis failed. Please check your inputs and try again.');
     } finally {
       setLoading(false);
     }

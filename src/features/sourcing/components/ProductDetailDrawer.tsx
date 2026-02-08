@@ -14,7 +14,6 @@ import {
     Space,
     Card,
     Tooltip,
-    Empty,
     message,
     Statistic,
     Row,
@@ -22,6 +21,7 @@ import {
     Switch,
     Alert,
 } from 'antd';
+import { EmptyState } from '@/components/shared/EmptyState';
 import {
     Bell,
     BellOff,
@@ -50,6 +50,7 @@ import {
 import { getCountryName } from '@/components/shared';
 import { ClassificationPath } from '@/features/compliance/components/ClassificationPath';
 import { useHTSHierarchy } from '@/hooks/useHTSHierarchy';
+import { formatHtsCode } from '@/utils/htsFormatting';
 
 const { Text, Title, Paragraph } = Typography;
 
@@ -321,15 +322,6 @@ export const ProductDetailDrawer: React.FC<ProductDetailDrawerProps> = ({
         setTimeout(() => setCopied(false), 2000);
     };
 
-    // Format HTS code for display
-    const formatHtsCode = (code: string) => {
-        const clean = code.replace(/\./g, '');
-        if (clean.length >= 10) {
-            return `${clean.slice(0, 4)}.${clean.slice(4, 6)}.${clean.slice(6, 10)}`;
-        }
-        return code;
-    };
-
     return (
         <Drawer
             open={open}
@@ -344,7 +336,11 @@ export const ProductDetailDrawer: React.FC<ProductDetailDrawerProps> = ({
                 </div>
             ) : !product ? (
                 <div className="p-6">
-                    <Empty description="Product not found" />
+                    <EmptyState
+                        icon="products"
+                        title="Product not found"
+                        description="This product may have been removed or is no longer available."
+                    />
                 </div>
             ) : (
                 <div className="flex flex-col h-full">
@@ -585,9 +581,10 @@ export const ProductDetailDrawer: React.FC<ProductDetailDrawerProps> = ({
                             {alternativesLoading ? (
                                 <Skeleton active paragraph={{ rows: 3 }} />
                             ) : alternatives.length === 0 ? (
-                                <Empty
-                                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                                    description="No alternative countries found"
+                                <EmptyState
+                                    icon="search"
+                                    title="No alternatives found"
+                                    description="No alternative sourcing countries available for this product."
                                 />
                             ) : (
                                 <div className="space-y-2">

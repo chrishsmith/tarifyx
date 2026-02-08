@@ -20,8 +20,8 @@ import {
   Row,
   Col,
   Statistic,
-  Spin,
 } from 'antd';
+import { LoadingState } from '@/components/shared/LoadingState';
 import {
   Search,
   History,
@@ -336,8 +336,7 @@ export const HTSHistoryLookup: React.FC = () => {
       {/* Results */}
       {loading && (
         <Card className="text-center py-8">
-          <Spin size="large" />
-          <Text className="block mt-4">Looking up code history...</Text>
+          <LoadingState message="Looking up code history..." size="large" />
         </Card>
       )}
 

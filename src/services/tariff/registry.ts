@@ -436,12 +436,13 @@ function checkSection232(htsCode: string): {
     const chapter = cleanCode.substring(0, 2);
     const heading = cleanCode.substring(0, 4);
     
-    // Steel: Chapter 72 and specific headings in 73
+    // Steel: Chapter 72 (all) + Chapter 73 industrial/structural headings ONLY
+    // Per Proclamation 9705: 7301-7313 are covered, consumer goods (7314+) are NOT.
+    // 7323 (pots/pans/kitchen), 7324 (sanitary ware), 7320 (springs), 7321 (stoves) etc. are EXCLUDED.
     const steelPrefixes = [
-        '72',      // Iron and steel
+        '72',      // Iron and steel (all primary/semi-finished forms)
         '7301', '7302', '7303', '7304', '7305', '7306', '7307', '7308', 
-        '7309', '7310', '7311', '7312', '7313', '7317', '7318', '7320', 
-        '7321', '7322', '7323', '7324', '7325', '7326'
+        '7309', '7310', '7311', '7312', '7313',
     ];
     if (steelPrefixes.some(p => cleanCode.startsWith(p))) {
         return { applies: true, rate: 25, product: 'Steel' };

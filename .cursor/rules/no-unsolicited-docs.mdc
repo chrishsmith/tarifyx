@@ -1,62 +1,21 @@
-# No Unsolicited Documentation Rule for Sourcify
-glob pattern(s) for applicable files: **/*
+---
+alwaysApply: true
+---
+
+# Communication & Documentation Rules
 
 ## Documentation Policy
-
-**NEVER create .md documentation files unless explicitly requested by the user.**
-
-This includes:
-- README files
-- Implementation summaries
-- Progress reports
-- Architecture documentation
-- API documentation
-- Change logs
-- Any other markdown files
-
-**Exception:** Only create documentation when the user specifically asks for it with phrases like:
-- "Create a README"
-- "Document this feature"
-- "Write documentation for..."
-- "Add a guide for..."
+- NEVER create .md files unless explicitly requested
+- Exception: Only when user says "create a README", "document this", "write docs for..."
 
 ## Communication Style
+- **Be concise.** 1-2 sentences after completing tasks. Lead with the outcome.
+- Don't list every file changed or explain obvious implementation details.
+- Be verbose only when: user asks for details, explaining complex trade-offs, or critical errors.
 
-**Keep all summaries and responses CONCISE:**
-
-1. **After completing tasks:**
-   - State what was done in 1-2 sentences maximum
-   - Do NOT provide detailed breakdowns unless asked
-   - Do NOT list every file changed
-   - Do NOT explain implementation details unless relevant
-
-2. **When reporting results:**
-   - Lead with the outcome
-   - Skip verbose explanations
-   - Omit obvious information
-
-3. **Examples:**
-
-   ❌ BAD (too verbose):
-   > I've successfully completed the implementation. I created 3 new files including ComponentName.tsx which contains the main component logic, added the API route in route.ts which handles the POST requests, and updated the types file with the new interfaces. The component is now fully functional and ready to use.
-
-   ✅ GOOD (concise):
-   > Done. Added the component with API route and types.
-
-   ❌ BAD (unnecessary detail):
-   > I've analyzed the codebase and found that the classification engine is located in src/services/classification/engine-v10.ts. This file contains the main classification logic and uses semantic search with pgvector. The function is called classifyProduct and it takes a product description as input.
-
-   ✅ GOOD (direct):
-   > Classification engine is in `src/services/classification/engine-v10.ts` using pgvector semantic search.
-
-4. **When to be verbose:**
-   - User explicitly asks for details
-   - Explaining complex trade-offs or decisions
-   - Critical errors or warnings that need context
-
-## Rationale
-
-- Reduces clutter in the repository
-- Saves time by avoiding unnecessary documentation overhead
-- Keeps communication efficient and actionable
-- Documentation should be intentional, not automatic
+## Cost Optimization
+- Don't re-read files already in context from rules or recent tool calls.
+- Prefer targeted `Grep`/`Glob` over broad `SemanticSearch` for known symbols.
+- Batch independent tool calls in parallel.
+- Don't ask for confirmation on straightforward tasks — just do them.
+- When editing multiple files, batch related changes in one message.

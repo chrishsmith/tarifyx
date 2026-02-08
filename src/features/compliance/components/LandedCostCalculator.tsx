@@ -47,7 +47,17 @@ import type { EffectiveTariffRate } from '@/types/tariffLayers.types';
 const { Title, Text } = Typography;
 
 // localStorage key for scenarios
-const SCENARIOS_STORAGE_KEY = 'sourcify_landed_cost_scenarios';
+const SCENARIOS_STORAGE_KEY = 'tarifyx_landed_cost_scenarios';
+
+// Auto-migrate from old key
+if (typeof window !== 'undefined') {
+    const OLD_KEY = 'sourcify_landed_cost_scenarios';
+    const oldData = window.localStorage.getItem(OLD_KEY);
+    if (oldData && !window.localStorage.getItem(SCENARIOS_STORAGE_KEY)) {
+        window.localStorage.setItem(SCENARIOS_STORAGE_KEY, oldData);
+        window.localStorage.removeItem(OLD_KEY);
+    }
+}
 
 // Country options
 const COUNTRY_OPTIONS = [
@@ -486,7 +496,7 @@ export const LandedCostCalculator: React.FC = () => {
                                 }
                             }}
                             style={compareMode ? { 
-                                background: 'linear-gradient(135deg, #7C3AED 0%, #5B21B6 100%)',
+                                background: 'linear-gradient(135deg, #0D9488 0%, #0F766E 100%)',
                             } : undefined}
                         >
                             {compareMode ? 'Exit Compare' : 'Compare Scenarios'}
@@ -502,7 +512,7 @@ export const LandedCostCalculator: React.FC = () => {
                     <Card className="border border-slate-200 shadow-sm lg:col-span-1">
                         <div className="flex items-center justify-between mb-4">
                             <Text strong className="text-slate-700">Select Scenarios</Text>
-                            <Badge count={selectedForCompare.length} showZero color="purple" />
+                            <Badge count={selectedForCompare.length} showZero color="cyan" />
                         </div>
                         
                         <div className="space-y-2">
@@ -512,7 +522,7 @@ export const LandedCostCalculator: React.FC = () => {
                                     onClick={() => toggleCompareSelection(scenario.id)}
                                     className={`p-3 rounded-lg border cursor-pointer transition-all ${
                                         selectedForCompare.includes(scenario.id)
-                                            ? 'bg-purple-50 border-purple-300 ring-1 ring-purple-200'
+                                            ? 'bg-teal-50 border-teal-300 ring-1 ring-teal-200'
                                             : 'bg-white border-slate-200 hover:border-slate-300'
                                     }`}
                                 >
@@ -525,7 +535,7 @@ export const LandedCostCalculator: React.FC = () => {
                                         </div>
                                         <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                                             selectedForCompare.includes(scenario.id)
-                                                ? 'bg-purple-600 border-purple-600'
+                                                ? 'bg-teal-600 border-teal-600'
                                                 : 'border-slate-300'
                                         }`}>
                                             {selectedForCompare.includes(scenario.id) && (
@@ -818,7 +828,7 @@ export const LandedCostCalculator: React.FC = () => {
                                             <div className="flex justify-between text-slate-600">
                                                 <span className="flex items-center gap-1">
                                                     MPF (0.3464%)
-                                                    <Tooltip title="Merchandise Processing Fee: 0.3464% of value, min $31.67, max $614.35">
+                                                    <Tooltip title="Merchandise Processing Fee: 0.3464% of value, min $33.58, max $651.50">
                                                         <Info size={12} className="text-slate-400" />
                                                     </Tooltip>
                                                 </span>
@@ -870,7 +880,7 @@ export const LandedCostCalculator: React.FC = () => {
                                         className="w-full mt-4"
                                         onClick={openSaveModal}
                                         style={{ 
-                                            background: 'linear-gradient(135deg, #7C3AED 0%, #5B21B6 100%)',
+                                            background: 'linear-gradient(135deg, #0D9488 0%, #0F766E 100%)',
                                             color: 'white',
                                             border: 'none',
                                         }}
@@ -913,10 +923,10 @@ export const LandedCostCalculator: React.FC = () => {
                     <Card className="border border-slate-200 shadow-sm xl:col-span-1">
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
-                                <Bookmark size={16} className="text-purple-600" />
+                                <Bookmark size={16} className="text-teal-600" />
                                 <Text strong className="text-slate-700">Saved Scenarios</Text>
                             </div>
-                            <Badge count={savedScenarios.length} showZero color="purple" />
+                            <Badge count={savedScenarios.length} showZero color="cyan" />
                         </div>
                         
                         {savedScenarios.length === 0 ? (
@@ -1009,7 +1019,7 @@ export const LandedCostCalculator: React.FC = () => {
             <Modal
                 title={
                     <div className="flex items-center gap-2">
-                        <Save size={18} className="text-purple-600" />
+                        <Save size={18} className="text-teal-600" />
                         <span>Save Scenario</span>
                     </div>
                 }
@@ -1023,7 +1033,7 @@ export const LandedCostCalculator: React.FC = () => {
                 okButtonProps={{
                     disabled: !scenarioName.trim(),
                     style: { 
-                        background: scenarioName.trim() ? 'linear-gradient(135deg, #7C3AED 0%, #5B21B6 100%)' : undefined,
+                        background: scenarioName.trim() ? 'linear-gradient(135deg, #0D9488 0%, #0F766E 100%)' : undefined,
                     }
                 }}
             >

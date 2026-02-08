@@ -51,6 +51,13 @@ export interface HtsSearchResult {
   matchScore: number;
 }
 
+export interface BaseMfnRateResult {
+  rate: number | null;
+  rateType: 'ad_valorem' | 'specific' | 'compound' | 'free' | 'unknown';
+  rawRate: string | null;
+  inheritedFrom?: string;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // CODE FORMATTING UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -182,6 +189,77 @@ export function parseSpecificRate(rateString: string | null): { amount: number; 
   }
   
   return null;
+}
+
+function getRateType(rateString: string | null): BaseMfnRateResult['rateType'] {
+  if (!rateString) return 'unknown';
+
+  const cleaned = rateString.trim().toLowerCase();
+  if (cleaned === 'free' || cleaned === '0' || cleaned === '0%') return 'free';
+
+  const hasPercent = /%/.test(cleaned);
+  const hasSpecific = /¢|\$|\/|per\s/.test(cleaned);
+
+  if (hasPercent && hasSpecific) return 'compound';
+  if (hasPercent) return 'ad_valorem';
+  if (hasSpecific) return 'specific';
+  return 'unknown';
+}
+
+/**
+ * Get base MFN rate for an HTS code using local HTS database
+ * Falls back to parent rates when exact code has no rate
+ */
+export async function getBaseMfnRate(htsCode: string): Promise<BaseMfnRateResult | null> {
+  const requestTimestamp = new Date().toISOString();
+  try {
+    const normalized = normalizeHtsCode(htsCode);
+    const hierarchy = await getHtsHierarchy(normalized);
+
+    if (!hierarchy || hierarchy.length === 0) {
+      return null;
+    }
+
+    const ordered = [...hierarchy].sort((a, b) => b.code.length - a.code.length);
+
+    for (const record of ordered) {
+      if (!record.generalRate) continue;
+
+      const rateType = getRateType(record.generalRate);
+      const inheritedFrom = record.codeFormatted || record.code;
+
+      if (rateType === 'free') {
+        return {
+          rate: 0,
+          rateType,
+          rawRate: record.generalRate,
+          inheritedFrom,
+        };
+      }
+
+      if (rateType === 'ad_valorem') {
+        const parsed = parseAdValoremRate(record.generalRate);
+        return {
+          rate: parsed ?? 0,
+          rateType,
+          rawRate: record.generalRate,
+          inheritedFrom,
+        };
+      }
+
+      return {
+        rate: null,
+        rateType,
+        rawRate: record.generalRate,
+        inheritedFrom,
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error(`[HTS DB] ${requestTimestamp} Failed to resolve MFN rate:`, error);
+    return null;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

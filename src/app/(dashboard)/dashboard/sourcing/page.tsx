@@ -63,6 +63,16 @@ function SourcingPageContent() {
         
         if (tabParam === 'monitoring') {
             setActiveTab('monitoring');
+        } else if (tabParam === 'suppliers') {
+            setActiveTab('suppliers');
+            if (htsParam) {
+                setSupplierFilterHts(htsParam);
+                setHtsCode(htsParam);
+            }
+            if (fromParam) {
+                setSupplierFilterCountry(fromParam);
+                setCurrentCountry(fromParam);
+            }
         } else if (htsParam) {
             setHtsCode(htsParam);
             if (fromParam) {
@@ -90,7 +100,7 @@ function SourcingPageContent() {
         
         try {
             // Step 1: Classify the product
-            const response = await fetch('/api/classify', {
+            const response = await fetch('/api/classify-v10', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -98,7 +108,6 @@ function SourcingPageContent() {
                     countryOfOrigin: values.countryOfOrigin,
                     materialComposition: values.materialComposition,
                     intendedUse: values.intendedUse,
-                    classificationType: 'import',
                 }),
             });
             
@@ -113,7 +122,8 @@ function SourcingPageContent() {
             await new Promise(resolve => setTimeout(resolve, 500));
             
             // Step 2: Set up sourcing analysis with the classified HTS code
-            setHtsCode(result.htsCode.code);
+            const classifiedCode = result.htsCode?.code || result.code;
+            setHtsCode(classifiedCode);
             setCurrentCountry(values.countryOfOrigin);
             setProductDescription(values.productDescription);
             
@@ -122,7 +132,7 @@ function SourcingPageContent() {
             
             setShowAnalysis(true);
             setIsFromNavigation(false);
-            messageApi.success(`Classified as HTS ${result.htsCode.code}`);
+            messageApi.success(`Classified as HTS ${classifiedCode}`);
         } catch (error) {
             console.error('Error:', error);
             messageApi.error('Classification failed. Please try again.');
@@ -222,11 +232,11 @@ function SourcingPageContent() {
             
             {/* Navigation Context Banner */}
             {isFromNavigation && htsCode && (
-                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 flex items-center justify-between">
+                <div className="bg-teal-50 border border-teal-200 rounded-lg p-4 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <span className="text-xl">🔍</span>
+                        <Search size={20} className="text-teal-600" />
                         <div>
-                            <Text strong className="text-indigo-900 block">
+                            <Text strong className="text-teal-900 block">
                                 Analyzing sourcing options for HTS {htsCode}
                             </Text>
                             {currentCountry && (
@@ -267,7 +277,7 @@ function SourcingPageContent() {
                                             
                                             {/* Toggle between input modes */}
                                             <div className="flex justify-center mb-6">
-                                                <div className="inline-flex rounded-lg bg-white/70 p-1">
+                                                <div className="inline-flex rounded-lg bg-slate-50 p-1">
                                                     <Button
                                                         type={inputMode === 'hts' ? 'primary' : 'text'}
                                                         size="small"

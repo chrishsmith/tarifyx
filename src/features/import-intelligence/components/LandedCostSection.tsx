@@ -5,7 +5,7 @@ import { Button, Typography, Alert, Tooltip } from 'antd';
 import { ChevronDown, ChevronRight, Copy, Check, Info, Clock } from 'lucide-react';
 import type { ImportAnalysis } from '../types';
 import { TariffExplanationDrawer } from './TariffExplanationDrawer';
-import { CountryComparisonDrawer } from './CountryComparisonDrawer';
+import { formatHtsCode } from '@/utils/htsFormatting';
 
 const { Text } = Typography;
 
@@ -18,21 +18,6 @@ interface LandedCostSectionProps {
 // Helper to format currency
 const formatCurrency = (amount: number): string => {
   return '$' + amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-};
-
-// Format HTS code with periods (e.g., 6912004400 -> 6912.00.44.00)
-const formatHtsCode = (code: string): string => {
-  const clean = code.replace(/\./g, '');
-  if (clean.length >= 10) {
-    return `${clean.slice(0, 4)}.${clean.slice(4, 6)}.${clean.slice(6, 8)}.${clean.slice(8)}`;
-  } else if (clean.length >= 8) {
-    return `${clean.slice(0, 4)}.${clean.slice(4, 6)}.${clean.slice(6)}`;
-  } else if (clean.length >= 6) {
-    return `${clean.slice(0, 4)}.${clean.slice(4)}`;
-  } else if (clean.length >= 4) {
-    return `${clean.slice(0, 4)}`;
-  }
-  return code;
 };
 
 // Collapsible section component - simple chevron + label + amount
@@ -94,7 +79,6 @@ export const LandedCostSection: React.FC<LandedCostSectionProps> = ({ landedCost
   const htsCode = formatHtsCode(htsCodeRaw);
   const productDescription = classification?.description || input.description || 'Product';
   const [showTariffExplanation, setShowTariffExplanation] = useState(false);
-  const [showCountryComparison, setShowCountryComparison] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showInsight, setShowInsight] = useState(true);
 
@@ -149,14 +133,14 @@ export const LandedCostSection: React.FC<LandedCostSectionProps> = ({ landedCost
       <div 
         className="rounded-xl p-6"
         style={{
-          background: 'linear-gradient(178.52deg, #EEF2FF 5.81%, #EFF6FF 94.19%)',
-          border: '1px solid #E0E7FF'
+          background: 'linear-gradient(178.52deg, #F0FDFA 5.81%, #F0FDF4 94.19%)',
+          border: '1px solid #CCFBF1'
         }}
       >
         <div className="flex items-start justify-between">
           <div>
             <div className="mb-2">
-              <Text className="text-xs font-semibold text-indigo-600 uppercase tracking-wider">
+              <Text className="text-xs font-semibold text-teal-600 uppercase tracking-wider">
                 Total Landed Cost
               </Text>
             </div>
@@ -179,7 +163,7 @@ export const LandedCostSection: React.FC<LandedCostSectionProps> = ({ landedCost
         </div>
         
         {/* Data freshness footer */}
-        <div className="flex items-center justify-between mt-4 pt-3 border-t border-indigo-100">
+        <div className="flex items-center justify-between mt-4 pt-3 border-t border-teal-100">
           <div className="flex items-center gap-1 text-xs text-slate-400">
             <Clock size={12} />
             <span>
@@ -192,6 +176,29 @@ export const LandedCostSection: React.FC<LandedCostSectionProps> = ({ landedCost
           </div>
         </div>
       </div>
+
+      {/* Margin Impact Indicator */}
+      {marginImpact && (
+        <div 
+          className="flex items-center justify-between rounded-lg px-4 py-3"
+          style={{ 
+            background: marginImpactColor.bg, 
+            border: `1px solid ${marginImpactColor.border}` 
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <Text className="text-sm font-medium" style={{ color: marginImpactColor.text }}>
+              Duty Impact on Margin
+            </Text>
+            <Tooltip title="Total duties as a percentage of your product value — shows how much tariffs eat into your margin">
+              <Info size={14} className="text-slate-400 cursor-help" />
+            </Tooltip>
+          </div>
+          <Text className="text-lg font-bold" style={{ color: marginImpactColor.text }}>
+            {marginImpact}
+          </Text>
+        </div>
+      )}
 
       {/* Contextual Insight Banner - Only shows when relevant */}
       {showInsight && (hasUSMCA || hasSection301) && (
@@ -207,29 +214,6 @@ export const LandedCostSection: React.FC<LandedCostSectionProps> = ({ landedCost
           className="text-sm"
         />
       )}
-
-      {/* Effective Tariff Rate */}
-      <div className="flex items-center justify-between py-2">
-        <div className="flex items-center gap-2">
-          <Text className="text-sm text-slate-600">Effective Tariff Rate</Text>
-          <button
-            onClick={() => setShowTariffExplanation(true)}
-            className="text-xs text-slate-400 underline hover:text-slate-600"
-          >
-            (why?)
-          </button>
-        </div>
-        <div className="flex items-center gap-3">
-          <Text className="text-sm font-medium text-slate-600">
-            {landedCost.duties.effectiveRate.toFixed(1)}%
-          </Text>
-          <Text className="text-sm font-semibold text-slate-900">
-            {formatCurrency(landedCost.duties.total)}
-          </Text>
-        </div>
-      </div>
-
-      <div className="h-px bg-slate-200" />
 
       {/* Cost Breakdown Label */}
       <Text className="text-base font-medium text-slate-700 block">
@@ -273,56 +257,66 @@ export const LandedCostSection: React.FC<LandedCostSectionProps> = ({ landedCost
       </CollapsibleSection>
 
       {/* Additional Costs */}
-      <CollapsibleSection label="Additional Costs" amount={additionalCostsTotal}>
-        <LineItem label="Customs Broker Fee" amount={landedCost.estimatedAdditional?.customsBroker || 150} />
+      <CollapsibleSection label="Additional Costs (estimated)" amount={additionalCostsTotal}>
+        <LineItem label="Customs Broker Fee (estimated)" amount={landedCost.estimatedAdditional?.customsBroker || 150} />
         <LineItem label="Drayage (estimated)" amount={landedCost.estimatedAdditional?.drayage || 300} />
+        <Text className="text-xs text-slate-400 block mt-1">
+          Estimates based on typical ocean shipment. Actual costs vary by entry complexity and location.
+        </Text>
       </CollapsibleSection>
 
       {/* Action Buttons */}
       <div className="flex gap-3 pt-4">
         <Button 
-          type="default"
+          type="primary" 
           size="large"
-          className="text-slate-500"
-          style={{ opacity: 0.6 }}
-        >
-          Save scenario
-        </Button>
-        <Button 
-          type="default"
-          size="large"
-          onClick={() => setShowCountryComparison(true)}
+          onClick={() => {
+            // Expand and scroll to Section 3 (Compare Countries) in the parent Collapse
+            const collapsePanel = document.querySelector('[data-component="country_compare_section"]');
+            if (collapsePanel) {
+              collapsePanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } else {
+              // Fallback: click the Section 3 collapse header to expand it, then scroll
+              const headers = document.querySelectorAll('.ant-collapse-header');
+              headers.forEach((header) => {
+                if (header.textContent?.includes('Compare Countries')) {
+                  (header as HTMLElement).click();
+                  setTimeout(() => header.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+                }
+              });
+            }
+          }}
+          style={{
+            background: 'linear-gradient(135deg, #0D9488 0%, #0F766E 100%)',
+            border: 'none'
+          }}
         >
           Compare countries
         </Button>
         <Button 
-          type="primary" 
+          type="default"
           size="large"
-          style={{
-            background: 'linear-gradient(180deg, #155DFC 0%, #4F39F6 100%)',
-            border: 'none'
-          }}
+          onClick={() => setShowTariffExplanation(true)}
         >
-          Export breakdown
+          Tariff details
+        </Button>
+        <Button 
+          type="default" 
+          size="large"
+          onClick={copyTotal}
+          icon={copied ? <Check size={16} /> : <Copy size={16} />}
+        >
+          {copied ? 'Copied!' : 'Copy total'}
         </Button>
       </div>
 
-      {/* Drawers */}
+      {/* Tariff Explanation Drawer */}
       <TariffExplanationDrawer
         open={showTariffExplanation}
         onClose={() => setShowTariffExplanation(false)}
         landedCost={landedCost}
         htsCode={htsCodeRaw}
         countryCode={input.countryCode || 'CN'}
-      />
-
-      <CountryComparisonDrawer
-        open={showCountryComparison}
-        onClose={() => setShowCountryComparison(false)}
-        htsCode={htsCodeRaw}
-        currentCountry={input.countryCode || 'CN'}
-        currentCost={landedCost.total}
-        quantity={input.quantity}
       />
     </div>
   );

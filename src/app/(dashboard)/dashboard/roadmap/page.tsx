@@ -441,7 +441,7 @@ export default function RoadmapPage() {
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900">Feature Library</h1>
                     <p className="text-slate-500 mt-1">
-                        All services and capabilities on the Sourcify platform
+                        All services and capabilities on the Tarifyx platform
                     </p>
                 </div>
                 

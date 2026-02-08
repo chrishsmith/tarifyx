@@ -99,7 +99,7 @@ export const ConditionalClassificationCard: React.FC<ConditionalClassificationCa
                 type="info"
                 showIcon
                 icon={<Info size={16} />}
-                className="mb-4 border-amber-200 bg-white/60"
+                className="mb-4 border-amber-200 bg-white"
             />
 
             {/* Value Input */}
@@ -184,7 +184,7 @@ export const ConditionalClassificationCard: React.FC<ConditionalClassificationCa
             {/* Help Section */}
             <Collapse
                 ghost
-                className="mt-4 bg-white/50 rounded-lg"
+                className="mt-4 bg-slate-50 rounded-lg"
                 items={[{
                     key: '1',
                     label: (

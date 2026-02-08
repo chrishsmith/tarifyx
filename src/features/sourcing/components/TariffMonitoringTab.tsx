@@ -8,6 +8,7 @@ import {
     Tag,
     Button,
     Input,
+    Select,
     Space,
     Tooltip,
     Badge,
@@ -36,8 +37,6 @@ import {
     Eye,
     MoreHorizontal,
     RefreshCw,
-    Filter,
-    Download,
     Plus,
     ChevronRight,
     Shield,
@@ -99,6 +98,27 @@ interface MonitoringStats {
     rateIncreases: number;
     rateDecreases: number;
 }
+
+const COUNTRY_OPTIONS = [
+    { value: 'CN', label: 'China' },
+    { value: 'VN', label: 'Vietnam' },
+    { value: 'IN', label: 'India' },
+    { value: 'MX', label: 'Mexico' },
+    { value: 'BD', label: 'Bangladesh' },
+    { value: 'ID', label: 'Indonesia' },
+    { value: 'TH', label: 'Thailand' },
+    { value: 'MY', label: 'Malaysia' },
+    { value: 'PH', label: 'Philippines' },
+    { value: 'PK', label: 'Pakistan' },
+    { value: 'KR', label: 'South Korea' },
+    { value: 'TW', label: 'Taiwan' },
+    { value: 'JP', label: 'Japan' },
+    { value: 'DE', label: 'Germany' },
+    { value: 'IT', label: 'Italy' },
+    { value: 'CA', label: 'Canada' },
+    { value: 'GB', label: 'United Kingdom' },
+    { value: 'FR', label: 'France' },
+];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RATE CHANGE INDICATOR
@@ -761,7 +781,7 @@ export const TariffMonitoringTab: React.FC<Props> = ({
                             <Card 
                                 hoverable 
                                 className="h-full border-2 border-dashed hover:border-teal-400 transition-colors"
-                                onClick={() => window.location.href = '/dashboard/classifications'}
+                                onClick={() => window.location.href = '/dashboard/import/analyze'}
                             >
                                 <div className="text-center py-4">
                                     <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-emerald-50 mb-3">
@@ -843,27 +863,15 @@ export const TariffMonitoringTab: React.FC<Props> = ({
                             <label className="block text-sm font-medium text-slate-700 mb-1">
                                 Country of Origin <span className="text-red-500">*</span>
                             </label>
-                            <select
-                                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                                value={addForm.countryOfOrigin}
-                                onChange={e => setAddForm(f => ({ ...f, countryOfOrigin: e.target.value }))}
-                            >
-                                <option value="">Select country...</option>
-                                <option value="CN">China</option>
-                                <option value="VN">Vietnam</option>
-                                <option value="IN">India</option>
-                                <option value="MX">Mexico</option>
-                                <option value="BD">Bangladesh</option>
-                                <option value="ID">Indonesia</option>
-                                <option value="TH">Thailand</option>
-                                <option value="MY">Malaysia</option>
-                                <option value="KR">South Korea</option>
-                                <option value="TW">Taiwan</option>
-                                <option value="DE">Germany</option>
-                                <option value="JP">Japan</option>
-                                <option value="IT">Italy</option>
-                                <option value="CA">Canada</option>
-                            </select>
+                            <Select
+                                placeholder="Select country..."
+                                value={addForm.countryOfOrigin || undefined}
+                                onChange={(value) => setAddForm(f => ({ ...f, countryOfOrigin: value }))}
+                                showSearch
+                                optionFilterProp="label"
+                                className="w-full"
+                                options={COUNTRY_OPTIONS}
+                            />
                         </div>
                     </div>
                 </Modal>
@@ -1001,32 +1009,20 @@ export const TariffMonitoringTab: React.FC<Props> = ({
                             Enter with or without dots (e.g., 8518.30.20 or 85183020)
                         </Text>
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">
-                            Country of Origin <span className="text-red-500">*</span>
-                        </label>
-                        <select
-                            className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                            value={addForm.countryOfOrigin}
-                            onChange={e => setAddForm(f => ({ ...f, countryOfOrigin: e.target.value }))}
-                        >
-                            <option value="">Select country...</option>
-                            <option value="CN">China</option>
-                            <option value="VN">Vietnam</option>
-                            <option value="IN">India</option>
-                            <option value="MX">Mexico</option>
-                            <option value="BD">Bangladesh</option>
-                            <option value="ID">Indonesia</option>
-                            <option value="TH">Thailand</option>
-                            <option value="MY">Malaysia</option>
-                            <option value="KR">South Korea</option>
-                            <option value="TW">Taiwan</option>
-                            <option value="DE">Germany</option>
-                            <option value="JP">Japan</option>
-                            <option value="IT">Italy</option>
-                            <option value="CA">Canada</option>
-                        </select>
-                    </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">
+                                Country of Origin <span className="text-red-500">*</span>
+                            </label>
+                            <Select
+                                placeholder="Select country..."
+                                value={addForm.countryOfOrigin || undefined}
+                                onChange={(value) => setAddForm(f => ({ ...f, countryOfOrigin: value }))}
+                                showSearch
+                                optionFilterProp="label"
+                                className="w-full"
+                                options={COUNTRY_OPTIONS}
+                            />
+                        </div>
                 </div>
             </Modal>
 

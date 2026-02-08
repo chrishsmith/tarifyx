@@ -502,18 +502,16 @@ export default function ClassificationV10LayoutB({
                         data-component-id="classification_initial_search"
                     >
                         <div className="mb-6">
-                            <Title level={2} className="!mb-1">
-                                <span className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">
-                                    HTS Classification
-                                </span>
+                            <Title level={2} className="!mb-1 text-slate-900">
+                                HTS Classification
                             </Title>
-                            <Text className="text-slate-600">Bringing the sexy back to logistics</Text>
+                            <Text className="text-slate-500">Classify your product and get the full tariff breakdown</Text>
                         </div>
 
                         <div className="rounded-2xl border border-slate-200 bg-white shadow-[0_20px_25px_-5px_rgba(0,0,0,0.1),0_8px_10px_-6px_rgba(0,0,0,0.1)] overflow-hidden">
                             <div className="bg-gradient-to-b from-slate-50 to-white border-b border-slate-200 px-8 py-6">
                                 <div className="flex items-center gap-3">
-                                    <div className="h-10 w-10 rounded-[14px] bg-gradient-to-br from-blue-500 to-violet-600 text-white flex items-center justify-center font-bold shadow-lg">
+                                    <div className="h-10 w-10 rounded-[14px] bg-teal-600 text-white flex items-center justify-center font-bold shadow-sm">
                                         1
                                     </div>
                                     <Title level={4} className="!m-0 text-slate-900">Product Information</Title>
@@ -627,7 +625,7 @@ export default function ClassificationV10LayoutB({
                                         loading={loading}
                                         disabled={!description.trim()}
                                         size="large"
-                                        className="bg-gradient-to-b from-blue-600 to-violet-600 border-none shadow-lg px-6"
+                                        className="bg-teal-600 hover:bg-teal-700 border-none shadow-sm px-6"
                                     >
                                         Analyze Product
                                         <ChevronRight size={16} className="ml-2" />
@@ -1031,7 +1029,7 @@ export default function ClassificationV10LayoutB({
                                                 <Text className="text-xs text-emerald-700 block mb-2">
                                                     Your product may qualify for a lower rate. See how to legally optimize your classification.
                                                 </Text>
-                                                <div className="bg-white/60 rounded-lg p-2 mb-2">
+                                                <div className="bg-slate-50 rounded-lg p-2 mb-2">
                                                     <div className="flex items-center justify-between text-xs">
                                                         <span className="text-slate-600">Your current rate:</span>
                                                         <span className="font-medium text-slate-700">{optimizerTeaser.currentRate.toFixed(1)}%</span>

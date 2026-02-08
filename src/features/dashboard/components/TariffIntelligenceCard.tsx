@@ -11,7 +11,6 @@ import {
     RefreshCw,
     Shield,
     Zap,
-    Globe,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -213,16 +212,32 @@ export const TariffIntelligenceCard: React.FC<Props> = ({ className }) => {
         );
     }
 
-    // Show error state
+    // Show error/empty state — differentiate between errors and genuinely no data
     if (error || !summary) {
         return (
             <Card className={className}>
-                <div className="text-center py-4">
-                    <AlertTriangle size={24} className="text-amber-500 mx-auto mb-2" />
-                    <Text type="secondary">Unable to load tariff intelligence</Text>
-                    <Button type="link" size="small" onClick={handleRefresh}>
-                        Retry
-                    </Button>
+                <div className="text-center py-6 px-4">
+                    <div className="w-12 h-12 bg-teal-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                        <Bell size={24} className="text-teal-600" />
+                    </div>
+                    <Title level={5} className="!mb-1.5 !text-slate-900">Tariff Intelligence</Title>
+                    <Text type="secondary" className="block text-sm mb-4">
+                        {error
+                            ? 'Unable to load tariff data right now.'
+                            : 'Save products to your portfolio to monitor tariff rate changes and get alerts.'}
+                    </Text>
+                    {error ? (
+                        <Button type="link" size="small" onClick={handleRefresh}>
+                            Retry
+                        </Button>
+                    ) : (
+                        <Link href="/dashboard/import/analyze">
+                            <button className="inline-flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-lg transition-colors">
+                                <Zap size={14} />
+                                Classify a Product
+                            </button>
+                        </Link>
+                    )}
                 </div>
             </Card>
         );
@@ -366,9 +381,9 @@ export const TariffIntelligenceCard: React.FC<Props> = ({ className }) => {
             </div>
 
             {/* Footer CTA */}
-            <Link href="/dashboard/sourcing?tab=monitoring">
+            <Link href="/dashboard/products">
                 <div className="px-6 py-3 bg-teal-600 hover:bg-teal-700 transition-colors cursor-pointer flex items-center justify-between">
-                    <Text className="text-white font-medium">View All Monitored Products</Text>
+                    <Text className="text-white font-medium">View My Products</Text>
                     <ChevronRight size={18} className="text-white/80" />
                 </div>
             </Link>

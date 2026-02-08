@@ -96,7 +96,7 @@ export const DEFAULT_SCRAPER_CONFIG: ScraperConfig = {
     requestDelay: 2000,
     maxRetries: 3,
     timeout: 30000,
-    userAgent: 'Mozilla/5.0 (compatible; SourceifyBot/1.0; +https://sourcify.com/bot)',
+    userAgent: 'Mozilla/5.0 (compatible; TarifyxBot/1.0; +https://tarifyx.com/bot)',
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════

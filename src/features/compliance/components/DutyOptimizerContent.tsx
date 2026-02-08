@@ -13,13 +13,13 @@ import {
   Collapse,
   Alert,
   Radio,
-  Spin,
   Progress,
   Badge,
   Space,
   Divider,
-  Empty,
 } from 'antd';
+import { LoadingState } from '@/components/shared/LoadingState';
+import { EmptyState } from '@/components/shared/EmptyState';
 import {
   Search,
   Zap,
@@ -396,7 +396,7 @@ const PaywallCard = ({
         See if you qualify and learn exactly what's required.
       </Paragraph>
       
-      <div className="bg-white/80 rounded-xl p-4 mb-6 w-full max-w-sm border border-emerald-200">
+      <div className="bg-white rounded-xl p-4 mb-6 w-full max-w-sm border border-emerald-200">
         <Text className="text-emerald-800 font-medium block mb-3">
           PRO unlocks:
         </Text>
@@ -425,7 +425,7 @@ const PaywallCard = ({
           type="primary" 
           size="large"
           icon={<Crown size={18} />}
-          className="bg-gradient-to-r from-emerald-500 to-teal-600 border-0 h-12 px-8 text-base font-medium"
+          className="bg-teal-600 hover:bg-teal-700 border-0 h-12 px-8 text-base font-medium"
         >
           See How to Qualify - $99/mo
         </Button>
@@ -707,7 +707,7 @@ export const DutyOptimizerContent = () => {
             icon={<Zap size={18} />}
             onClick={handleOptimize}
             loading={loading}
-            className="w-full md:w-auto bg-gradient-to-r from-emerald-500 to-teal-600 border-0 h-12 px-8 text-base font-medium"
+            className="w-full md:w-auto bg-teal-600 hover:bg-teal-700 border-0 h-12 px-8 text-base font-medium"
           >
             {loading ? 'Analyzing...' : 'Find Lower Rate Options'}
           </Button>
@@ -730,10 +730,9 @@ export const DutyOptimizerContent = () => {
       {/* Loading State */}
       {loading && (
         <Card className="mb-6">
-          <div className="flex flex-col items-center justify-center py-12">
-            <Spin size="large" />
-            <Text className="mt-4 text-slate-500">Analyzing product and searching for applicable codes...</Text>
-            <div className="w-64 mt-4">
+          <LoadingState size="large" message="Analyzing product and searching for applicable codes..." />
+          <div className="flex flex-col items-center pb-6">
+            <div className="w-64">
               <Progress percent={0} status="active" showInfo={false} />
             </div>
             <Text className="text-xs text-slate-400 mt-2">This may take 10-15 seconds for comprehensive analysis</Text>
@@ -827,7 +826,7 @@ export const DutyOptimizerContent = () => {
             </div>
             
             {result.applicableCodes.length === 0 && (
-              <Empty description="No applicable codes found" />
+              <EmptyState icon="search" title="No applicable codes found" description="Try adjusting the product description for better results." />
             )}
           </Card>
           

@@ -422,7 +422,7 @@ export const ClassificationsTable: React.FC<ClassificationsTableProps> = ({ onVi
                         description="Save products from your classifications to track them here."
                         action={{
                             label: "Classify a Product",
-                            href: "/dashboard/classify",
+                            href: "/dashboard/import/analyze",
                             icon: <Plus size={16} />,
                         }}
                     />

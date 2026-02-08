@@ -249,7 +249,11 @@ export async function getLiveAdditionalDuties(
     const cleanCode = htsCode.replace(/\./g, '');
     const chapter = cleanCode.substring(0, 2);
     
-    if (chapter === '72' || cleanCode.startsWith('73')) {
+    // Section 232 steel: Chapter 72 + headings 7301-7313 only
+    // Per Proclamation 9705, consumer goods (7317-7326: cookware, sanitary ware, etc.) are NOT covered
+    const STEEL_232_PREFIXES = ['7301', '7302', '7303', '7304', '7305', '7306', '7307', '7308', '7309', '7310', '7311', '7312', '7313'];
+    const heading4 = cleanCode.substring(0, 4);
+    if (chapter === '72' || STEEL_232_PREFIXES.includes(heading4)) {
         // Steel product
         section232Steel = await fetchLiveChapter99Rate('9903.80.01');
     }
@@ -344,5 +348,4 @@ export function getCacheStatus(): { entries: number; oldestEntry: Date | null } 
         oldestEntry: oldest,
     };
 }
-
 

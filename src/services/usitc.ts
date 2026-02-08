@@ -29,6 +29,9 @@ const HTS_API_BASE = 'https://hts.usitc.gov/reststop';
 // Fallback: DataWeb API (requires USITC_DATAWEB_API_KEY in .env.local)
 const DATAWEB_API_BASE = 'https://datawebws.usitc.gov/dataweb';
 
+/** Request timeout for USITC API calls (10 seconds) */
+const USITC_REQUEST_TIMEOUT_MS = 10_000;
+
 /**
  * Search for HTS codes by keyword
  * Returns up to 100 matching tariff articles
@@ -54,17 +57,20 @@ export async function searchHTSCodes(query: string): Promise<HTSSearchResult[]> 
  * Search via HTS Search API (hts.usitc.gov)
  */
 async function searchHTSCodesViaHTS(query: string): Promise<HTSSearchResult[]> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), USITC_REQUEST_TIMEOUT_MS);
+    
     try {
         const url = `${HTS_API_BASE}/search?keyword=${encodeURIComponent(query)}`;
-        console.log(`[USITC-HTS] Searching: ${url}`);
         
         const response = await fetch(url, {
             method: 'GET',
             headers: {
                 'Accept': 'application/json',
-                'User-Agent': 'Sourcify/1.0 (HTS Classification Service)',
+                'User-Agent': 'Tarifyx/1.0 (HTS Classification Service)',
             },
             cache: 'no-store',
+            signal: controller.signal,
         });
 
         if (!response.ok) {
@@ -73,11 +79,16 @@ async function searchHTSCodesViaHTS(query: string): Promise<HTSSearchResult[]> {
         }
 
         const data = await response.json();
-        console.log(`[USITC-HTS] Found ${data?.length || 0} results for: ${query}`);
         return data as HTSSearchResult[];
     } catch (error) {
-        console.error('[USITC-HTS] Search error:', error);
+        if (error instanceof DOMException && error.name === 'AbortError') {
+            console.error(`[USITC-HTS] Request timed out after ${USITC_REQUEST_TIMEOUT_MS}ms`);
+        } else {
+            console.error('[USITC-HTS] Search error:', error);
+        }
         return [];
+    } finally {
+        clearTimeout(timeout);
     }
 }
 
@@ -126,9 +137,8 @@ async function searchByHtsCode(code: string, apiKey: string): Promise<HTSSearchR
         // Use commodityDescriptionLookup - more reliable than commodityTree
         const requestBody = {
             classificationSystem: 'HTS',
-            commodities: [cleanCode], // Pass the code as-is
+            commodities: [cleanCode],
         };
-        console.log(`[USITC-DataWeb] Request body:`, JSON.stringify(requestBody));
         
         const response = await fetch(`${DATAWEB_API_BASE}/api/v2/commodity/commodityDescriptionLookup`, {
             method: 'POST',
@@ -139,8 +149,6 @@ async function searchByHtsCode(code: string, apiKey: string): Promise<HTSSearchR
             },
             body: JSON.stringify(requestBody),
         });
-        
-        console.log(`[USITC-DataWeb] Response status: ${response.status}`);
         
         const responseText = await response.text();
         
@@ -156,8 +164,6 @@ async function searchByHtsCode(code: string, apiKey: string): Promise<HTSSearchR
         }
         
         const data = JSON.parse(responseText);
-        console.log(`[USITC-DataWeb] Response data keys:`, Object.keys(data || {}));
-        console.log(`[USITC-DataWeb] Response sample:`, JSON.stringify(data).substring(0, 1000));
         return parseDataWebDescriptionLookup(data, cleanCode);
     } catch (error) {
         console.error('[USITC-DataWeb] Lookup fetch error:', error);
@@ -210,7 +216,7 @@ async function searchByKeyword(keyword: string, apiKey: string): Promise<HTSSear
             searchString: keyword,
             granularity: '6', // Start with 6-digit for broader results
         };
-        console.log(`[USITC-DataWeb] Keyword request body:`, JSON.stringify(requestBody));
+        
         
         const response = await fetch(`${DATAWEB_API_BASE}/api/v2/commodity/validateCommoditySearch`, {
             method: 'POST',
@@ -222,8 +228,6 @@ async function searchByKeyword(keyword: string, apiKey: string): Promise<HTSSear
             body: JSON.stringify(requestBody),
         });
         
-        console.log(`[USITC-DataWeb] Keyword response status: ${response.status}`);
-        
         if (!response.ok) {
             const errorText = await response.text();
             console.error(`[USITC-DataWeb] Search error: ${response.status}`, errorText.substring(0, 500));
@@ -231,55 +235,11 @@ async function searchByKeyword(keyword: string, apiKey: string): Promise<HTSSear
         }
         
         const data = await response.json();
-        console.log(`[USITC-DataWeb] Keyword response keys:`, Object.keys(data || {}));
-        console.log(`[USITC-DataWeb] Keyword response sample:`, JSON.stringify(data).substring(0, 500));
         return parseDataWebSearchResults(data);
     } catch (error) {
         console.error('[USITC-DataWeb] Search fetch error:', error);
         return [];
     }
-}
-
-/**
- * Parse DataWeb commodity tree response into HTSSearchResult format
- */
-function parseDataWebCommodityTree(data: any, targetCode: string): HTSSearchResult[] {
-    const results: HTSSearchResult[] = [];
-    
-    try {
-        // DataWeb returns nested structure - flatten it
-        const items = data?.options || data?.commodities || data || [];
-        
-        for (const item of items) {
-            if (item.value && item.name) {
-                const code = item.value.replace(/\./g, '');
-                // Filter to codes that match our target
-                if (code.startsWith(targetCode.substring(0, 4))) {
-                    results.push({
-                        htsno: formatHtsNumber(item.value),
-                        description: item.name || item.description || '',
-                        general: item.general || '',
-                        special: item.special || '',
-                        other: item.other || '',
-                        units: item.units || '',
-                        chapter: code.substring(0, 2),
-                        indent: item.indent || 0,
-                    });
-                }
-            }
-            
-            // Check for nested children
-            if (item.children) {
-                const childResults = parseDataWebCommodityTree({ options: item.children }, targetCode);
-                results.push(...childResults);
-            }
-        }
-    } catch (error) {
-        console.error('[USITC-DataWeb] Parse tree error:', error);
-    }
-    
-    console.log(`[USITC-DataWeb] Parsed ${results.length} codes from tree`);
-    return results;
 }
 
 /**

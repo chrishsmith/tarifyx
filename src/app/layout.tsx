@@ -7,8 +7,8 @@ import './globals.css';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Sourcify',
-  description: 'AI-Powered Trade Compliance & Sourcing',
+  title: 'Tarifyx',
+  description: 'AI-Powered Import Intelligence for Smarter Trade',
 };
 
 export default function RootLayout({

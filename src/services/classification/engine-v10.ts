@@ -42,6 +42,7 @@ import {
   llmGuidedClassification,
 } from '@/services/classification/llmReranker';
 import { classifyWithSetFit } from '@/services/setfitClassifier';
+import { predictHeadings, HeadingClassifierResult, HeadingPrediction } from '@/services/classification/headingClassifier';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HTS CHAPTER DESCRIPTIONS (Not in database, stored here for reference)
@@ -259,6 +260,23 @@ export interface ClassifyV10Result {
     timing: number;
   };
   
+  // Split confidence: heading × code (more transparent than a single blended number)
+  splitConfidence?: {
+    heading: number;      // 0-100: How sure we are about the 4-digit heading
+    code: number;         // 0-100: How sure we are about the specific statistical suffix
+    combined: number;     // heading × code / 100 (the effective confidence)
+    headingExplanation: string; // e.g., "95% sure this is a T-shirt (Ch 61)"
+    codeExplanation: string;   // e.g., "89% sure about the exact statistical suffix"
+  };
+  
+  // Heading classifier result (Phase 0 output)
+  headingPrediction?: {
+    predictions: HeadingPrediction[];
+    method: string;
+    constrained: boolean;
+    timing: number;
+  };
+  
   // Clarification needed when confidence is too low
   needsClarification?: {
     reason: string;
@@ -303,20 +321,24 @@ interface ScoringFactors {
 interface HtsCandidate {
   code: string;
   codeFormatted: string;
-  level: HtsLevel;
+  level?: HtsLevel;
   description: string;
-  generalRate: string | null;
-  specialRates: string | null;
-  keywords: string[];
-  parentGroupings: string[];
+  generalRate?: string | null;
+  specialRates?: string | null;
+  keywords?: string[];
+  parentGroupings?: string[];
   chapter: string;
-  parentCode: string | null;
+  heading?: string | null;
+  parentCode?: string | null;
   
   // Computed
   isOtherCode: boolean;
-  isSpecificCarveOut: boolean;
+  isSpecificCarveOut?: boolean;
   fullDescription: string;
-  parentDescription: string | null;
+  parentDescription?: string | null;
+  
+  // Search relevance
+  similarity?: number;
   
   // Scoring
   score: number;
@@ -1389,13 +1411,36 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
   const { description, origin, destination = 'US', material: inputMaterial } = input;
   
   // ─────────────────────────────────────────────────────────────────────────────
+  // PHASE 0: HEADING PREDICTION (New — gates the entire search)
+  // 
+  // Predicts top 3 HTS headings (4-digit) BEFORE search begins.
+  // When confidence is high (>70%), search is constrained to predicted headings,
+  // eliminating chapter-level errors and reducing search space by ~95%.
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  const headingResult = await predictHeadings(description, {
+    material: inputMaterial,
+    useSetFit: input.useSetFit !== false,
+    useAI: true,
+  });
+  
+  console.log(`[V10] Phase 0 heading prediction: ${headingResult.predictions.map(p => `${p.heading}(${p.headingConfidence}%)`).join(', ')} in ${headingResult.timing}ms`);
+  
+  // ─────────────────────────────────────────────────────────────────────────────
   // PHASE 1: TOKENIZE & DETECT MATERIAL
   // ─────────────────────────────────────────────────────────────────────────────
   
   const searchTerms = tokenizeInput(description);
-  const detectedMaterial = inputMaterial || detectMaterial(description);
+  const detectedMaterial = inputMaterial || headingResult.detected.material || detectMaterial(description);
   const materialChapters = getMaterialChapters(detectedMaterial);
   const productTypeHints = detectProductType(description);
+  
+  // Merge heading classifier's product type detection with existing detection
+  if (!productTypeHints.type && headingResult.detected.productType) {
+    productTypeHints.type = headingResult.detected.productType;
+    // Add the predicted headings as hints
+    productTypeHints.headings = headingResult.predictions.map(p => p.heading);
+  }
   
   // Expand search terms with product type keywords
   const expandedTerms = [...new Set([
@@ -1408,9 +1453,12 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
   console.log('[V10] Material chapters:', materialChapters);
   console.log('[V10] Product type:', productTypeHints.type);
   console.log('[V10] Product headings hint:', productTypeHints.headings);
+  console.log('[V10] Heading constraint:', headingResult.shouldConstrain ? `YES → ${headingResult.predictions.map(p => p.heading).join(', ')}` : 'NO (open search)');
   
   // ─────────────────────────────────────────────────────────────────────────────
   // PHASE 1.5: TRY SETFIT FAST PATH (if enabled and available)
+  // Now integrated with heading classifier — SetFit is used for heading prediction
+  // in Phase 0, and only used here for direct code prediction with high confidence.
   // ─────────────────────────────────────────────────────────────────────────────
   
   const useSetFit = input.useSetFit !== false; // Default to true
@@ -1422,57 +1470,111 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
       setfitResult = await classifyWithSetFit(description);
       
       // If SetFit has high confidence (>80%), use it directly
+      // BUT validate against heading prediction to catch chapter-level errors
       if (setfitResult && setfitResult.predictions[0]?.confidence > 0.80) {
         const setfitCode = setfitResult.predictions[0].code;
-        console.log(`[V10] SetFit high confidence: ${setfitCode} (${(setfitResult.predictions[0].confidence * 100).toFixed(1)}%)`);
+        const setfitHeading = setfitCode.slice(0, 4);
+        const setfitChapter = setfitCode.slice(0, 2);
         
-        // Fetch the HTS code details from database
-        const htsCode = await prisma.htsCode.findUnique({
-          where: { code: setfitCode }
-        });
+        // Validate: SetFit's heading should not conflict with heading classifier
+        const headingConflict = headingResult.shouldConstrain && 
+          !headingResult.predictions.some(p => p.heading === setfitHeading) &&
+          !headingResult.excludedChapters.has(setfitChapter) === false;
         
-        if (htsCode) {
-          // Use SetFit result as primary, skip semantic search
-          console.log('[V10] Using SetFit result, skipping semantic search');
+        // Also check exclusion rules
+        const chapterExcluded = headingResult.excludedChapters.has(setfitChapter);
+        
+        if (chapterExcluded) {
+          console.log(`[V10] SetFit predicted ${setfitCode} but Chapter ${setfitChapter} is EXCLUDED by rule. Falling back.`);
+        } else if (headingConflict) {
+          console.log(`[V10] SetFit heading ${setfitHeading} conflicts with heading classifier ${headingResult.predictions.map(p => p.heading).join(', ')}. Falling back.`);
+        } else {
+          console.log(`[V10] SetFit high confidence: ${setfitCode} (${(setfitResult.predictions[0].confidence * 100).toFixed(1)}%)`);
           
-          // Build result using SetFit prediction
-          const primaryDesc = await buildFullDescription(htsCode.code);
-          const dutyInfo = await getEffectiveTariff(htsCode.code, origin || 'CN', destination);
+          // Fetch the HTS code details from database
+          const htsCode = await prisma.htsCode.findUnique({
+            where: { code: setfitCode }
+          });
           
-          return {
-            success: true,
-            timing: {
-              total: Date.now() - startTime,
-              search: setfitResult.latency_ms,
-              scoring: 0,
-              tariff: 0,
-            },
-            primary: {
-              htsCode: htsCode.code,
-              htsCodeFormatted: htsCode.codeFormatted,
-              confidence: Math.round(setfitResult.predictions[0].confidence * 100),
-              path: primaryDesc.path,
-              fullDescription: primaryDesc.full,
-              shortDescription: htsCode.description,
-              duty: dutyInfo,
-              isOther: false,
-              scoringFactors: {
-                semanticMatch: setfitResult.predictions[0].confidence * 100,
-                keywordMatch: 0,
-                materialMatch: 0,
-                productTypeMatch: 0,
-                total: setfitResult.predictions[0].confidence * 100,
+          if (htsCode) {
+            // Use SetFit result as primary, skip semantic search
+            console.log('[V10] Using SetFit result, skipping semantic search');
+            
+            // Build result using SetFit prediction
+            const primaryDesc = await buildFullDescription(htsCode.code);
+            
+            // Build duty info matching the expected format
+            let setfitDutyInfo: ClassifyV10Result['primary'] extends null ? never : NonNullable<ClassifyV10Result['primary']>['duty'] = null;
+            if (origin) {
+              try {
+                const baseMfnRate = htsCode.generalRate ? parseFloat(htsCode.generalRate) || 0 : 0;
+                const tariff = await getEffectiveTariff(origin, htsCode.code, { baseMfnRate });
+                setfitDutyInfo = {
+                  baseMfn: htsCode.generalRate || 'N/A',
+                  additional: tariff.ieepaBreakdown.baseline + tariff.ieepaBreakdown.fentanyl + tariff.ieepaBreakdown.reciprocal + tariff.section301Rate + tariff.section232Rate > 0
+                    ? `+${(tariff.ieepaBreakdown.baseline + tariff.ieepaBreakdown.fentanyl + tariff.ieepaBreakdown.reciprocal + tariff.section301Rate + tariff.section232Rate).toFixed(1)}%`
+                    : 'None',
+                  effective: `${tariff.effectiveRate.toFixed(1)}%`,
+                };
+              } catch (err) {
+                console.error('[V10] SetFit tariff lookup error:', err);
+              }
+            }
+            
+            // Split confidence for SetFit: heading confidence from classifier, code confidence from SetFit
+            const setfitCodeConfidence = Math.round(setfitResult.predictions[0].confidence * 100);
+            const setfitHeadingConf = headingResult.predictions.find(p => p.heading === setfitHeading)?.headingConfidence || setfitCodeConfidence;
+            const combinedConfidence = Math.round(setfitHeadingConf * setfitCodeConfidence / 100);
+            
+            return {
+              success: true,
+              timing: {
+                total: Date.now() - startTime,
+                search: setfitResult.latency_ms,
+                scoring: 0,
+                tariff: 0,
               },
-            },
-            alternatives: [],
-            showMore: false,
-            detectedMaterial,
-            detectedChapters: materialChapters,
-            searchTerms,
-            aiReasoning: `Classified using ML model with ${(setfitResult.predictions[0].confidence * 100).toFixed(1)}% confidence.`,
-            setfitUsed: true,
-            setfitLatency: setfitResult.latency_ms,
-          };
+              primary: {
+                htsCode: htsCode.code,
+                htsCodeFormatted: htsCode.codeFormatted,
+                confidence: combinedConfidence,
+                path: primaryDesc.path,
+                fullDescription: primaryDesc.full,
+                shortDescription: htsCode.description,
+                duty: setfitDutyInfo,
+                isOther: false,
+                scoringFactors: {
+                  keywordMatch: 0,
+                  materialMatch: 0,
+                  specificity: 0,
+                  hierarchyCoherence: 0,
+                  penalties: 0,
+                  total: combinedConfidence,
+                },
+              },
+              alternatives: [],
+              showMore: 0,
+              detectedMaterial,
+              detectedChapters: materialChapters,
+              searchTerms,
+              aiReasoning: `Classified using ML model with ${setfitCodeConfidence}% code confidence and ${setfitHeadingConf}% heading confidence.`,
+              setfitUsed: true,
+              setfitLatency: setfitResult.latency_ms,
+              splitConfidence: {
+                heading: setfitHeadingConf,
+                code: setfitCodeConfidence,
+                combined: combinedConfidence,
+                headingExplanation: `${setfitHeadingConf}% confident about heading ${setfitHeading}`,
+                codeExplanation: `${setfitCodeConfidence}% confident about exact code (ML model)`,
+              },
+              headingPrediction: {
+                predictions: headingResult.predictions,
+                method: headingResult.method,
+                constrained: headingResult.shouldConstrain,
+                timing: headingResult.timing,
+              },
+            };
+          }
         }
       } else if (setfitResult) {
         console.log(`[V10] SetFit low confidence (${(setfitResult.predictions[0]?.confidence * 100 || 0).toFixed(1)}%), falling back to semantic search`);
@@ -1483,17 +1585,48 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
   }
   
   // ─────────────────────────────────────────────────────────────────────────────
-  // PHASE 2: SEARCH - Try Semantic Search First, Fallback to Keywords
+  // PHASE 2: SEARCH - Constrained by Heading Prediction
+  // 
+  // When heading classifier has high confidence (>70%), search ONLY within
+  // predicted headings. This eliminates chapter-level errors and reduces
+  // search space by ~95%.
+  // 
+  // When confidence is low, fall back to full-spectrum search.
   // ─────────────────────────────────────────────────────────────────────────────
   
   const searchStart = Date.now();
   let allResults: Awaited<ReturnType<typeof prisma.htsCode.findMany>> = [];
   let usedSemanticSearch = false;
   
+  // Build the heading constraint from Phase 0
+  const constrainedHeadings = headingResult.shouldConstrain 
+    ? headingResult.predictions.map(p => p.heading)
+    : [];
+  
+  // If constrained, also do a direct DB lookup for codes in predicted headings
+  // This is the FASTEST path — no embeddings needed, just heading filter
+  if (constrainedHeadings.length > 0) {
+    console.log(`[V10] CONSTRAINED SEARCH: Searching within headings ${constrainedHeadings.join(', ')}`);
+    
+    const constrainedResults = await prisma.htsCode.findMany({
+      where: {
+        heading: { in: constrainedHeadings },
+        level: { in: ['statistical', 'tariff_line'] },
+      },
+      orderBy: { code: 'asc' },
+      take: 100, // Get more codes since we're in a narrow heading
+    });
+    
+    allResults = constrainedResults;
+    usedSemanticSearch = true; // Skip further search if we have good results
+    console.log(`[V10] Constrained search found ${constrainedResults.length} codes in ${constrainedHeadings.length} headings`);
+  }
+  
   // Check if embeddings are available and semantic search is enabled
   const useSemanticSearch = input.useSemanticSearch !== false; // Default to true
   
-  if (useSemanticSearch) {
+  // Run semantic search if: not constrained, or constrained results are sparse
+  if (useSemanticSearch && (!headingResult.shouldConstrain || allResults.length < 5)) {
     try {
       // Check embedding coverage
       const stats = await getEmbeddingStats();
@@ -1516,6 +1649,14 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
         
         console.log(`[V10] Enriched query: "${enrichedDescription}"`);
         
+        // Merge heading predictions with product type hints for semantic search
+        const allPreferredHeadings = [
+          ...new Set([
+            ...productTypeHints.headings,
+            ...constrainedHeadings,
+          ])
+        ];
+        
         // Use dual-path search for material + function
         // HYBRID SEARCH: Combines semantic (embeddings) + lexical (BM25) for best accuracy
         const semanticResults = await dualPathSearch(
@@ -1523,8 +1664,8 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
           enrichedDescription,
           { 
             limit: 50,
-            // When we know the product type, restrict to relevant headings
-            preferredHeadings: productTypeHints.headings,
+            // Restrict to relevant headings (from both product type and heading classifier)
+            preferredHeadings: allPreferredHeadings.length > 0 ? allPreferredHeadings : productTypeHints.headings,
             // Enable hybrid search (semantic + lexical)
             useHybrid: stats.hybridSearchAvailable !== false,
           }
@@ -1536,8 +1677,17 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
           const PRIMARY_THRESHOLD = 0.4;    // High quality for main result
           const ALTERNATIVE_THRESHOLD = 0.2; // Include diverse options even with lower match
           
-          // Get all results above the lenient threshold
-          const allViable = semanticResults.filter(r => r.similarity >= ALTERNATIVE_THRESHOLD);
+          // Get all results above the lenient threshold, filtering out excluded chapters
+          const allViable = semanticResults.filter(r => {
+            if (r.similarity < ALTERNATIVE_THRESHOLD) return false;
+            // Filter out codes in excluded chapters (from chapter exclusion rules)
+            const chapter = r.code.substring(0, 2);
+            if (headingResult.excludedChapters.has(chapter)) {
+              console.log(`[V10] Filtering semantic result ${r.code} — Chapter ${chapter} excluded by rule`);
+              return false;
+            }
+            return true;
+          });
           
           // Ensure chapter diversity - keep at least one result per chapter if above alt threshold
           const chapterBest = new Map<string, typeof semanticResults[0]>();
@@ -1606,6 +1756,20 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
   // Fallback to keyword search if semantic search didn't work OR had low-quality results
   if (!usedSemanticSearch) {
     console.log('[V10] Using KEYWORD SEARCH');
+    
+    // Priority 0: If heading classifier predicted headings, search those first
+    if (constrainedHeadings.length > 0 && allResults.length === 0) {
+      const headingResults = await prisma.htsCode.findMany({
+        where: {
+          heading: { in: constrainedHeadings },
+          level: { in: ['statistical', 'tariff_line'] },
+        },
+        take: 80,
+        orderBy: { code: 'asc' },
+      });
+      allResults = [...allResults, ...headingResults];
+      console.log(`[V10] Found ${headingResults.length} codes in predicted headings ${constrainedHeadings.join(', ')}`);
+    }
     
     // Priority 1: Search in product-type-specific headings with material filter
     if (productTypeHints.headings.length > 0 && materialChapters.length > 0) {
@@ -1872,13 +2036,23 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
   });
   const hasUnrelatedAlternatives = unrelatedAlts.length >= 2;
   
+  // Skip reranking when heading classifier has high confidence (>80%)
+  // In this case, we already know the heading is correct — the reranker can't help
+  // and would just add latency. Only rerank for ambiguous cases.
+  const headingIsHighConfidence = headingResult.headingConfidence >= 80;
+  
   // Always rerank if confidence is below threshold OR there's any ambiguity signal
-  const shouldRerank = topCandidate && (
+  // BUT skip if heading classifier already gave us high confidence
+  const shouldRerank = topCandidate && !headingIsHighConfidence && (
     topCandidate.score < RERANK_THRESHOLD ||
     hasCloseMargin ||
     hasScatteredChapters ||
     hasUnrelatedAlternatives
   );
+  
+  if (headingIsHighConfidence && topCandidate) {
+    console.log(`[V10] Skipping LLM reranker — heading confidence ${headingResult.headingConfidence}% >= 80% threshold`);
+  }
   
   if (shouldRerank) {
     console.log(`[V10] Reranking triggered: confidence=${topCandidate.score}%, closeMargin=${hasCloseMargin}, scatteredChapters=${hasScatteredChapters}, unrelatedAlts=${hasUnrelatedAlternatives}`);
@@ -2529,6 +2703,41 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
     searchTerms,
   );
   
+  // ─────────────────────────────────────────────────────────────────────────────
+  // SPLIT CONFIDENCE: heading confidence × code confidence
+  // 
+  // A score of 85 now means "95% sure about heading × 89% sure about suffix"
+  // instead of one opaque blended number. This lets the UI show:
+  // "We're confident this is a T-shirt (Ch 61), but the exact code depends on fiber content."
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  const primaryHeading = primary.code.slice(0, 4);
+  const primaryChapterForConf = primary.code.slice(0, 2);
+  
+  // Heading confidence: from heading classifier if it predicted this heading, otherwise from score
+  const matchedHeadingPrediction = headingResult.predictions.find(p => p.heading === primaryHeading);
+  const headingConf = matchedHeadingPrediction
+    ? matchedHeadingPrediction.headingConfidence
+    : Math.min(90, displayConfidence + 10); // If we found it through search, heading is likely right
+  
+  // Code confidence: how sure we are about the specific statistical suffix
+  // This is the score WITHIN the heading — how well the code matches the product
+  const codeConf = displayConfidence;
+  
+  // Combined: heading × code / 100
+  const combinedConf = Math.round(headingConf * codeConf / 100);
+  
+  // Build heading explanation
+  const headingDesc = CHAPTER_DESCRIPTIONS[primaryChapterForConf] || '';
+  const headingExpl = matchedHeadingPrediction
+    ? `${headingConf}% confident this is heading ${primaryHeading} (${matchedHeadingPrediction.reason})`
+    : `${headingConf}% confident about heading ${primaryHeading} (${headingDesc})`;
+  
+  // Build code explanation  
+  const codeExpl = primary.isOtherCode
+    ? `${codeConf}% confident — falls into "Other" category within this heading`
+    : `${codeConf}% confident about specific code ${primary.codeFormatted}`;
+  
   return {
     success: true,
     timing: {
@@ -2540,8 +2749,8 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
     primary: {
       htsCode: primary.code,
       htsCodeFormatted: primary.codeFormatted,
-      // Use displayConfidence (floored) instead of raw score to prevent showing 0%
-      confidence: displayConfidence,
+      // Use combined confidence (heading × code) for the display confidence
+      confidence: Math.max(CONFIDENCE_FLOOR, combinedConf),
       path: primaryDesc.path,
       fullDescription: primaryDesc.full,
       shortDescription: primary.description,
@@ -2556,6 +2765,19 @@ export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10R
     detectedChapters: materialChapters,
     searchTerms,
     aiReasoning,
+    splitConfidence: {
+      heading: headingConf,
+      code: codeConf,
+      combined: combinedConf,
+      headingExplanation: headingExpl,
+      codeExplanation: codeExpl,
+    },
+    headingPrediction: {
+      predictions: headingResult.predictions,
+      method: headingResult.method,
+      constrained: headingResult.shouldConstrain,
+      timing: headingResult.timing,
+    },
     needsClarification,
     conditionalClassification,
     // Include LLM reranker info if it was used

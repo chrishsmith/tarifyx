@@ -174,8 +174,14 @@ export const ComplianceAlerts: React.FC = () => {
   };
 
   const loadPreferences = () => {
-    // Load from localStorage
-    const saved = localStorage.getItem('sourcify_alert_preferences');
+    // Auto-migrate from old sourcify key
+    const NEW_KEY = 'tarifyx_alert_preferences';
+    const OLD_KEY = 'sourcify_alert_preferences';
+    if (!localStorage.getItem(NEW_KEY) && localStorage.getItem(OLD_KEY)) {
+      localStorage.setItem(NEW_KEY, localStorage.getItem(OLD_KEY)!);
+      localStorage.removeItem(OLD_KEY);
+    }
+    const saved = localStorage.getItem(NEW_KEY);
     if (saved) {
       try {
         setPreferences(JSON.parse(saved));
@@ -187,7 +193,7 @@ export const ComplianceAlerts: React.FC = () => {
 
   const savePreferences = (newPrefs: AlertPreferences) => {
     setPreferences(newPrefs);
-    localStorage.setItem('sourcify_alert_preferences', JSON.stringify(newPrefs));
+    localStorage.setItem('tarifyx_alert_preferences', JSON.stringify(newPrefs));
     message.success('Alert preferences saved');
   };
 

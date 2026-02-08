@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Button, Collapse } from 'antd';
-import { Copy, Check, HelpCircle, FileText, AlertTriangle, Scale } from 'lucide-react';
+import { Copy, Check, HelpCircle, FileText, AlertTriangle, Scale, Target, Hash } from 'lucide-react';
 import type { ImportAnalysis } from '../types';
 
 interface ClassificationSectionProps {
@@ -180,10 +180,6 @@ export const ClassificationSection: React.FC<ClassificationSectionProps> = ({
   const confidenceBadge = getConfidenceBadge(classification.confidence);
   const pathSteps = parseClassificationPath(classification.path, classification.htsCode, classification.description);
   
-  // Debug logging
-  console.log('[ClassificationSection] Path data:', classification.path);
-  console.log('[ClassificationSection] Parsed steps:', pathSteps);
-  
   const toggleStep = (index: number) => {
     const newExpanded = new Set(expandedSteps);
     if (newExpanded.has(index)) {
@@ -225,7 +221,7 @@ export const ClassificationSection: React.FC<ClassificationSectionProps> = ({
           <div className="flex items-center gap-2">
             <span className="text-slate-500 text-sm">Confidence:</span>
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${confidenceBadge.bgColor} ${confidenceBadge.textColor}`}>
-              {confidenceBadge.label}
+              {classification.confidence}% — {confidenceBadge.label}
             </span>
           </div>
         </div>
@@ -235,7 +231,7 @@ export const ClassificationSection: React.FC<ClassificationSectionProps> = ({
           </span>
           <button
             onClick={handleCopy}
-            className="p-2 rounded-lg hover:bg-white/60 transition-colors"
+            className="p-2 rounded-lg hover:bg-slate-50 transition-colors"
             title="Copy HTS code"
           >
             {copied ? (
@@ -246,6 +242,91 @@ export const ClassificationSection: React.FC<ClassificationSectionProps> = ({
           </button>
         </div>
         <p className="text-slate-600">{classification.description}</p>
+
+        {/* Split Confidence Breakdown */}
+        {classification.splitConfidence && (
+          <div className="mt-4 pt-4 border-t border-blue-200/60">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+              Confidence Breakdown
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {/* Heading Confidence */}
+              <div className="bg-white/70 rounded-lg p-3 border border-blue-100">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Target size={14} className="text-teal-600" />
+                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Heading</span>
+                </div>
+                <div className="flex items-end gap-1.5">
+                  <span className="text-2xl font-bold text-slate-900">
+                    {classification.splitConfidence.heading}%
+                  </span>
+                </div>
+                <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${classification.splitConfidence.heading}%`,
+                      backgroundColor: classification.splitConfidence.heading >= 85 ? '#10B981' : classification.splitConfidence.heading >= 70 ? '#F59E0B' : '#EF4444',
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-slate-500 mt-1.5 leading-snug">
+                  {classification.splitConfidence.headingExplanation}
+                </p>
+              </div>
+
+              {/* Code Confidence */}
+              <div className="bg-white/70 rounded-lg p-3 border border-blue-100">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Hash size={14} className="text-teal-600" />
+                  <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Exact Code</span>
+                </div>
+                <div className="flex items-end gap-1.5">
+                  <span className="text-2xl font-bold text-slate-900">
+                    {classification.splitConfidence.code}%
+                  </span>
+                </div>
+                <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${classification.splitConfidence.code}%`,
+                      backgroundColor: classification.splitConfidence.code >= 85 ? '#10B981' : classification.splitConfidence.code >= 70 ? '#F59E0B' : '#EF4444',
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-slate-500 mt-1.5 leading-snug">
+                  {classification.splitConfidence.codeExplanation}
+                </p>
+              </div>
+            </div>
+
+            {/* Heading Prediction Method Badge */}
+            {classification.headingPrediction && (
+              <div className="flex items-center gap-2 mt-3">
+                <span className="text-xs text-slate-400">Heading identified via:</span>
+                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                  classification.headingPrediction.method === 'deterministic'
+                    ? 'bg-green-100 text-green-700'
+                    : classification.headingPrediction.method === 'setfit'
+                      ? 'bg-purple-100 text-purple-700'
+                      : 'bg-blue-100 text-blue-700'
+                }`}>
+                  {classification.headingPrediction.method === 'deterministic'
+                    ? 'Pattern Match'
+                    : classification.headingPrediction.method === 'setfit'
+                      ? 'ML Model'
+                      : 'AI Analysis'}
+                </span>
+                {classification.headingPrediction.constrained && (
+                  <span className="px-2 py-0.5 rounded text-xs font-medium bg-teal-100 text-teal-700">
+                    Search Gated
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Classification Path */}
@@ -286,10 +367,10 @@ export const ClassificationSection: React.FC<ClassificationSectionProps> = ({
                     className={`
                       flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold z-10 transition-all
                       ${isLast 
-                        ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-md' 
+                        ? 'bg-teal-600 text-white shadow-sm' 
                         : isHovered && hasAdditionalInfo
-                          ? 'bg-gradient-to-br from-blue-200 to-blue-300 text-blue-800'
-                          : 'bg-gradient-to-br from-blue-100 to-blue-200 text-blue-700'
+                          ? 'bg-teal-100 text-teal-800'
+                          : 'bg-teal-50 text-teal-700'
                       }
                     `}
                   >

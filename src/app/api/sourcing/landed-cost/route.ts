@@ -10,6 +10,7 @@ import {
     calculateLandedCost,
     getQuickCostComparison 
 } from '@/services/sourcing/landed-cost';
+import { getBaseMfnRate } from '@/services/hts/database';
 
 export async function GET(request: NextRequest) {
     try {
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
         
         if (!htsCode) {
             return NextResponse.json(
-                { error: 'htsCode query parameter is required' },
+                { success: false, error: 'htsCode query parameter is required' },
                 { status: 400 }
             );
         }
@@ -29,14 +30,18 @@ export async function GET(request: NextRequest) {
         const quantity = parseInt(searchParams.get('quantity') || '1000');
         const weight = parseFloat(searchParams.get('weightPerUnit') || '0.5');
         const minConfidence = parseInt(searchParams.get('minConfidence') || '20');
+        const baseMfnInfo = await getBaseMfnRate(htsCode);
+        const baseMfnRate = baseMfnInfo?.rate ?? 0;
         
         if (mode === 'single' && country) {
             // Calculate landed cost for specific country
-            const result = await calculateLandedCost(htsCode, country, quantity, weight);
+            const result = await calculateLandedCost(htsCode, country, quantity, weight, {
+                baseMfnRateOverride: baseMfnRate,
+            });
             
             if (!result) {
                 return NextResponse.json(
-                    { error: 'No cost data available for this HTS/country combination' },
+                    { success: false, error: 'No cost data available for this HTS/country combination' },
                     { status: 404 }
                 );
             }
@@ -77,13 +82,9 @@ export async function GET(request: NextRequest) {
     } catch (error) {
         console.error('[API] Landed cost error:', error);
         return NextResponse.json(
-            { error: 'Failed to calculate landed costs' },
+            { success: false, error: 'Failed to calculate landed costs' },
             { status: 500 }
         );
     }
 }
-
-
-
-
 

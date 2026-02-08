@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Drawer, Typography, Button, Tag, Skeleton, Alert, Empty } from 'antd';
+import React, { useState, useEffect, useRef } from 'react';
+import { Drawer, Typography, Button, Tag, Skeleton, Alert } from 'antd';
+import { EmptyState } from '@/components/shared/EmptyState';
 import { Globe, TrendingDown, TrendingUp, ArrowRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
@@ -11,12 +12,33 @@ interface CountryOption {
   code: string;
   name: string;
   flag: string;
-  cost: number;
+  costPerUnit: number;
+  costTotal: number;
   tariffRate: number;
   hasFTA: boolean;
   ftaNotes?: string;
-  savings?: number;
+  savingsPerUnit?: number;
+  savingsTotal?: number;
   savingsPercent?: number;
+  supplierCount?: number;
+  transitDays?: number;
+  confidenceScore?: number;
+  dataQuality?: 'high' | 'medium' | 'low';
+  isRecommended?: boolean;
+}
+
+interface BaselineInfo {
+  code: string;
+  name: string;
+  landedCostPerUnit: number;
+  landedCostTotal: number;
+}
+
+interface PotentialSavingsInfo {
+  percent: number;
+  perUnit: number;
+  total: number;
+  annual?: number;
 }
 
 interface CountryComparisonDrawerProps {
@@ -40,56 +62,102 @@ export const CountryComparisonDrawer: React.FC<CountryComparisonDrawerProps> = (
   const [loading, setLoading] = useState(false);
   const [countries, setCountries] = useState<CountryOption[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [baseline, setBaseline] = useState<BaselineInfo | null>(null);
+  const [potentialSavings, setPotentialSavings] = useState<PotentialSavingsInfo | null>(null);
+  const lastFetchRef = useRef(0);
+  const lastActionRef = useRef(0);
+
+  const ACTION_DEBOUNCE_MS = 300;
 
   useEffect(() => {
-    if (open && htsCode) {
-      fetchCountryComparison();
+    if (!open || !htsCode) {
+      return;
     }
-  }, [open, htsCode]);
 
-  const fetchCountryComparison = async () => {
-    setLoading(true);
-    setError(null);
-    
+    const controller = new AbortController();
+    fetchCountryComparison(controller.signal);
+
+    return () => {
+      controller.abort();
+    };
+  }, [open, htsCode, currentCountry, quantity]);
+
+  const fetchCountryComparison = async (signal: AbortSignal) => {
     try {
-      const response = await fetch(`/api/sourcing/quick?hts=${htsCode}&from=${currentCountry}`);
-      
+      const now = Date.now();
+      if (now - lastFetchRef.current < ACTION_DEBOUNCE_MS) {
+        return;
+      }
+      lastFetchRef.current = now;
+
+      setLoading(true);
+      setError(null);
+
+      const params = new URLSearchParams({
+        hts: htsCode,
+        from: currentCountry,
+        quantity: String(quantity),
+      });
+
+      const response = await fetch(`/api/sourcing/quick?${params.toString()}`, { signal });
+
       if (!response.ok) {
         throw new Error('Failed to fetch country comparison');
       }
-      
+
       const data = await response.json();
-      
+
       if (data.success && data.data?.alternatives) {
         // Map the alternatives to our format
         const mappedCountries: CountryOption[] = data.data.alternatives.map((alt: any) => ({
           code: alt.code,
           name: alt.name,
           flag: alt.flag,
-          cost: alt.landedCost,
+          costPerUnit: alt.landedCostPerUnit,
+          costTotal: alt.landedCostTotal,
           tariffRate: alt.effectiveTariff,
           hasFTA: alt.hasFTA,
           ftaNotes: alt.ftaName,
-          savings: alt.savingsAmount,
+          savingsPerUnit: alt.savingsAmountPerUnit,
+          savingsTotal: alt.savingsAmountTotal,
           savingsPercent: alt.savingsPercent,
+          supplierCount: alt.supplierCount,
+          transitDays: alt.transitDays,
+          confidenceScore: alt.confidenceScore,
+          dataQuality: alt.dataQuality,
+          isRecommended: alt.isRecommended,
         }));
-        
+
+        const perUnitFallback = quantity > 0 ? currentCost / quantity : currentCost;
+
         // Add current country at the top
         const currentCountryData: CountryOption = {
           code: currentCountry,
           name: data.data.currentCountry?.name || currentCountry,
           flag: data.data.currentCountry?.flag || '🌍',
-          cost: currentCost,
-          tariffRate: 0, // Would need to pass this in
+          costPerUnit: data.data.currentCountry?.landedCostPerUnit ?? perUnitFallback,
+          costTotal: data.data.currentCountry?.landedCostTotal ?? currentCost,
+          tariffRate: data.data.currentCountry?.effectiveTariff ?? 0,
           hasFTA: false,
+          supplierCount: data.data.currentCountry?.supplierCount ?? undefined,
+          transitDays: data.data.currentCountry?.transitDays ?? undefined,
+          confidenceScore: data.data.currentCountry?.confidenceScore ?? undefined,
+          dataQuality: data.data.currentCountry?.dataQuality ?? undefined,
         };
-        
+
+        setBaseline(data.data.baseline || null);
+        setPotentialSavings(data.data.potentialSavings || null);
         setCountries([currentCountryData, ...mappedCountries]);
       } else {
+        setBaseline(null);
+        setPotentialSavings(null);
         setCountries([]);
       }
     } catch (err) {
-      console.error('[CountryComparison] Error:', err);
+      if ((err as Error).name === 'AbortError') {
+        return;
+      }
+      console.error(`[CountryComparison] ${new Date().toISOString()} Error:`, err);
       setError(err instanceof Error ? err.message : 'Failed to load comparison');
     } finally {
       setLoading(false);
@@ -97,18 +165,33 @@ export const CountryComparisonDrawer: React.FC<CountryComparisonDrawerProps> = (
   };
 
   const handleViewFullAnalysis = () => {
-    router.push(`/dashboard/sourcing?hts=${htsCode}&from=${currentCountry}`);
-    onClose();
+    try {
+      const now = Date.now();
+      if (now - lastActionRef.current < ACTION_DEBOUNCE_MS) {
+        return;
+      }
+      lastActionRef.current = now;
+      router.push(`/dashboard/sourcing?hts=${htsCode}&from=${currentCountry}`);
+      onClose();
+    } catch (error) {
+      console.error(`[CountryComparison] ${new Date().toISOString()} Navigation error:`, error);
+    }
   };
 
-  const formatCurrency = (amount: number) => 
-    `$${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const formatCurrency = (amount: number) => {
+    try {
+      return `$${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    } catch (error) {
+      console.error(`[CountryComparison] ${new Date().toISOString()} formatCurrency error:`, error);
+      return '$0.00';
+    }
+  };
 
   return (
     <Drawer
       title={
         <div className="flex items-center gap-2">
-          <Globe size={20} className="text-indigo-600" />
+          <Globe size={20} className="text-teal-600" />
           <Text className="text-lg font-semibold">Compare Sourcing Countries</Text>
         </div>
       }
@@ -116,8 +199,9 @@ export const CountryComparisonDrawer: React.FC<CountryComparisonDrawerProps> = (
       width={560}
       onClose={onClose}
       open={open}
+      data-component="country_comparison_drawer"
     >
-      <div className="space-y-4">
+      <div className="space-y-4" data-component="country_comparison_drawer_body">
         {/* Header Info */}
         <div className="bg-slate-50 rounded-lg p-4">
           <Text className="text-sm text-slate-600 block mb-1">Comparing landed costs for:</Text>
@@ -125,6 +209,11 @@ export const CountryComparisonDrawer: React.FC<CountryComparisonDrawerProps> = (
           <Text className="text-xs text-slate-500 block mt-1">
             Quantity: {quantity.toLocaleString()} units
           </Text>
+          {baseline && (
+            <Text className="text-xs text-slate-500 block mt-1">
+              Baseline: {baseline.name} ({baseline.code})
+            </Text>
+          )}
         </div>
 
         {/* Loading State */}
@@ -150,9 +239,10 @@ export const CountryComparisonDrawer: React.FC<CountryComparisonDrawerProps> = (
 
         {/* Empty State */}
         {!loading && !error && countries.length === 0 && (
-          <Empty
-            description="No comparison data available for this product"
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          <EmptyState
+            icon="search"
+            title="No comparison data"
+            description="No country comparison data is available for this product."
           />
         )}
 
@@ -165,13 +255,18 @@ export const CountryComparisonDrawer: React.FC<CountryComparisonDrawerProps> = (
                   key={country.code}
                   className={`rounded-lg border p-4 transition-all ${
                     idx === 0
-                      ? 'bg-indigo-50 border-indigo-200 ring-1 ring-indigo-100'
+                      ? 'bg-teal-50 border-teal-200 ring-1 ring-teal-100'
                       : 'bg-white border-slate-200 hover:border-slate-300'
                   }`}
                 >
-                  {idx === 0 && (
-                    <Tag color="blue" className="mb-2">Current Selection</Tag>
-                  )}
+                  <div className="flex items-center gap-2 mb-2">
+                    {idx === 0 && (
+                      <Tag color="cyan">Current Selection</Tag>
+                    )}
+                    {country.isRecommended && idx > 0 && (
+                      <Tag color="green">Recommended</Tag>
+                    )}
+                  </div>
                   
                   <div className="flex items-start justify-between mb-3">
                     <div>
@@ -186,32 +281,52 @@ export const CountryComparisonDrawer: React.FC<CountryComparisonDrawerProps> = (
                           {country.ftaNotes || 'FTA Available'}
                         </Tag>
                       )}
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {country.supplierCount !== undefined && (
+                          <Tag className="text-xs" color="default">
+                            {country.supplierCount} suppliers
+                          </Tag>
+                        )}
+                        {country.transitDays !== undefined && (
+                          <Tag className="text-xs" color="default">
+                            {country.transitDays} day transit
+                          </Tag>
+                        )}
+                        {country.dataQuality && (
+                          <Tag className="text-xs" color={country.dataQuality === 'high' ? 'green' : country.dataQuality === 'medium' ? 'gold' : 'default'}>
+                            {country.dataQuality} confidence
+                          </Tag>
+                        )}
+                      </div>
                     </div>
                     <div className="text-right">
                       <Text className="text-2xl font-bold text-slate-900 block">
-                        {formatCurrency(country.cost)}
+                        {formatCurrency(country.costTotal)}
                       </Text>
                       <Text className="text-xs text-slate-500">total landed cost</Text>
+                      <Text className="text-xs text-slate-400 block">
+                        {formatCurrency(country.costPerUnit)} per unit
+                      </Text>
                     </div>
                   </div>
 
                   {/* Savings Indicator */}
-                  {idx > 0 && country.savings !== undefined && (
+                  {idx > 0 && country.savingsTotal !== undefined && (
                     <div className="flex items-center justify-between pt-3 border-t border-slate-200">
-                      <Text className="text-sm text-slate-600">vs. Current</Text>
+                      <Text className="text-sm text-slate-600">vs. Baseline</Text>
                       <div className="flex items-center gap-2">
-                        {country.savings > 0 ? (
+                        {country.savingsTotal > 0 ? (
                           <>
                             <TrendingDown size={16} className="text-green-600" />
                             <Text className="font-semibold text-green-600">
-                              Save {formatCurrency(country.savings)} ({country.savingsPercent}%)
+                              Save {formatCurrency(country.savingsTotal)} ({country.savingsPercent}%)
                             </Text>
                           </>
-                        ) : country.savings < 0 ? (
+                        ) : country.savingsTotal < 0 ? (
                           <>
                             <TrendingUp size={16} className="text-red-600" />
                             <Text className="font-semibold text-red-600">
-                              +{formatCurrency(Math.abs(country.savings))} ({Math.abs(country.savingsPercent || 0)}%)
+                              +{formatCurrency(Math.abs(country.savingsTotal))} ({Math.abs(country.savingsPercent || 0)}%)
                             </Text>
                           </>
                         ) : (
@@ -242,15 +357,24 @@ export const CountryComparisonDrawer: React.FC<CountryComparisonDrawerProps> = (
                 message={
                   <div className="text-sm">
                     {(() => {
-                      const lowest = [...countries].sort((a, b) => a.cost - b.cost)[0];
+                      if (potentialSavings && potentialSavings.perUnit > 0 && baseline) {
+                        return (
+                          <Text>
+                            Best alternative saves <strong>{formatCurrency(potentialSavings.total)}</strong> total
+                            ({potentialSavings.percent}%) vs {baseline.name}.
+                          </Text>
+                        );
+                      }
+
+                      const lowest = [...countries].sort((a, b) => a.costTotal - b.costTotal)[0];
                       const current = countries[0];
                       
                       if (lowest.code === current.code) {
                         return <Text>You're already sourcing from the most cost-effective country!</Text>;
                       }
                       
-                      const savings = current.cost - lowest.cost;
-                      const savingsPercent = ((savings / current.cost) * 100).toFixed(1);
+                      const savings = current.costTotal - lowest.costTotal;
+                      const savingsPercent = ((savings / current.costTotal) * 100).toFixed(1);
                       
                       return (
                         <Text>
@@ -262,7 +386,7 @@ export const CountryComparisonDrawer: React.FC<CountryComparisonDrawerProps> = (
                     })()}
                   </div>
                 }
-                className="bg-blue-50 border-blue-200"
+                className="bg-teal-50 border-teal-200"
               />
             )}
 
@@ -274,7 +398,7 @@ export const CountryComparisonDrawer: React.FC<CountryComparisonDrawerProps> = (
               onClick={handleViewFullAnalysis}
               className="w-full"
               style={{
-                background: 'linear-gradient(180deg, #155DFC 0%, #4F39F6 100%)',
+                background: 'linear-gradient(135deg, #0D9488 0%, #0F766E 100%)',
                 border: 'none'
               }}
             >

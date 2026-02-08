@@ -3,8 +3,22 @@
 
 import type { ClassificationResult, ClassificationHistoryItem } from '@/types/classification.types';
 
-const STORAGE_KEY = 'sourcify_classification_history';
-const FULL_RESULTS_KEY = 'sourcify_classification_results';
+const STORAGE_KEY = 'tarifyx_classification_history';
+const FULL_RESULTS_KEY = 'tarifyx_classification_results';
+
+// Migration: rename old keys from pre-rebrand
+if (typeof window !== 'undefined') {
+    const oldHistory = localStorage.getItem('sourcify_classification_history');
+    const oldResults = localStorage.getItem('sourcify_classification_results');
+    if (oldHistory && !localStorage.getItem(STORAGE_KEY)) {
+        localStorage.setItem(STORAGE_KEY, oldHistory);
+        localStorage.removeItem('sourcify_classification_history');
+    }
+    if (oldResults && !localStorage.getItem(FULL_RESULTS_KEY)) {
+        localStorage.setItem(FULL_RESULTS_KEY, oldResults);
+        localStorage.removeItem('sourcify_classification_results');
+    }
+}
 const MAX_HISTORY_ITEMS = 50;
 
 export interface StoredClassification {

@@ -13,7 +13,6 @@
  */
 
 import { prisma } from '@/lib/db';
-import { RevisionStatus } from '@prisma/client';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -105,7 +104,7 @@ export async function scrapeUsitcRevisionInfo(): Promise<UsitcRevisionInfo | nul
     // Fetch the main HTS page
     const response = await fetch('https://hts.usitc.gov/', {
       headers: {
-        'User-Agent': 'Sourcify-HTS-Checker/1.0',
+        'User-Agent': 'Tarifyx-HTS-Checker/1.0',
       },
     });
     

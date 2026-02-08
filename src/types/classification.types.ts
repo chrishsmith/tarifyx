@@ -50,6 +50,27 @@ export interface ConditionalClassification {
     explanation: string;            // Why this matters for classification
 }
 
+export interface SplitConfidence {
+    heading: number;       // 0-100: How sure we are about the 4-digit heading
+    code: number;          // 0-100: How sure we are about the specific statistical suffix
+    combined: number;      // heading × code / 100
+    headingExplanation: string;
+    codeExplanation: string;
+}
+
+export interface HeadingPredictionInfo {
+    predictions: Array<{
+        heading: string;
+        chapter: string;
+        headingConfidence: number;
+        reason: string;
+        source: string;
+    }>;
+    method: string;
+    constrained: boolean;
+    timing: number;
+}
+
 export interface ClassificationResult {
     id: string;
     input: ClassificationInput;
@@ -75,6 +96,10 @@ export interface ClassificationResult {
     // Auto-generated product name if user didn't provide one
     // Generated from AI analysis (essentialCharacter + primaryMaterial)
     suggestedProductName?: string;
+    // Split confidence: heading vs code (V10 engine)
+    splitConfidence?: SplitConfidence;
+    // Heading classifier result (Phase 0 output from V10 engine)
+    headingPrediction?: HeadingPredictionInfo;
 }
 
 export interface ClassificationHistoryItem {

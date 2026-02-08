@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { Card, Form, Input, Select, InputNumber, Checkbox, Button, Typography } from 'antd';
-import { FileText, Save, Hash, ChevronRight } from 'lucide-react';
+import { Card, Form, Input, Select, InputNumber, Checkbox, Button, Typography, Tooltip } from 'antd';
+import { FileText, Save, Hash, ChevronRight, HelpCircle } from 'lucide-react';
 import { COUNTRIES } from '@/components/shared/constants';
 import type { ProductInput, ProductAttributes } from '../types';
 
@@ -77,18 +77,16 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
     <div className="rounded-3xl bg-gradient-to-br from-slate-50 to-slate-100 p-8" data-component-id="import_analyze_product">
       <div className="max-w-[1024px] mx-auto">
         <div className="mb-6">
-          <Title level={2} className="!mb-1">
-            <span className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">
-              HTS Classification
-            </span>
+          <Title level={2} className="!mb-1 text-slate-900">
+            HTS Classification
           </Title>
-          <Text className="text-slate-600">Bringing the sexy back to logistics</Text>
+          <Text className="text-slate-500">Classify your product and get the full tariff breakdown</Text>
         </div>
 
-        <Card className="rounded-2xl border border-slate-200 shadow-[0_20px_25px_-5px_rgba(0,0,0,0.1),0_8px_10px_-6px_rgba(0,0,0,0.1)]">
+        <Card className="rounded-2xl border border-slate-200 shadow-sm">
           <div className="bg-gradient-to-b from-slate-50 to-white border-b border-slate-200 -m-6 mb-6 px-8 py-6 rounded-t-2xl">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-[14px] bg-gradient-to-br from-blue-500 to-violet-600 text-white flex items-center justify-center font-bold shadow-lg">
+              <div className="h-10 w-10 rounded-[14px] bg-teal-600 text-white flex items-center justify-center font-bold shadow-sm">
                 1
               </div>
               <Title level={4} className="!m-0 text-slate-900">Product Information</Title>
@@ -200,11 +198,19 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
 
               <Form.Item
                 name="value"
-                label={<span className="text-slate-700 font-medium"><span className="text-red-500">*</span> Product Value (USD)</span>}
+                label={
+                  <span className="text-slate-700 font-medium inline-flex items-center gap-1">
+                    <span className="text-red-500">*</span> Total Shipment Value (USD)
+                    <Tooltip title="The total value of the entire shipment (unit cost × quantity). Example: 1,000 shirts at $5 each = $5,000 total.">
+                      <HelpCircle size={14} className="text-slate-400 cursor-help" />
+                    </Tooltip>
+                  </span>
+                }
                 rules={[{ required: true, message: 'Required' }]}
+                extra={<span className="text-xs text-slate-400">Unit cost × quantity — not the per-unit price</span>}
               >
                 <InputNumber
-                  placeholder="10,000"
+                  placeholder="5,000"
                   size="large"
                   className="w-full"
                   min={0}
@@ -235,22 +241,22 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
                 <Form.Item name="containsBattery" valuePropName="checked" className="!mb-0">
-                  <Checkbox className="sourcify-checkbox">Contains lithium battery</Checkbox>
+                  <Checkbox className="tarifyx-checkbox">Contains lithium battery</Checkbox>
                 </Form.Item>
                 <Form.Item name="containsChemicals" valuePropName="checked" className="!mb-0">
-                  <Checkbox className="sourcify-checkbox">Contains chemicals/hazardous materials</Checkbox>
+                  <Checkbox className="tarifyx-checkbox">Contains chemicals/hazardous materials</Checkbox>
                 </Form.Item>
                 <Form.Item name="forChildren" valuePropName="checked" className="!mb-0">
-                  <Checkbox className="sourcify-checkbox">For children (under 12)</Checkbox>
+                  <Checkbox className="tarifyx-checkbox">For children (under 12)</Checkbox>
                 </Form.Item>
                 <Form.Item name="foodContact" valuePropName="checked" className="!mb-0">
-                  <Checkbox className="sourcify-checkbox">Food or food contact</Checkbox>
+                  <Checkbox className="tarifyx-checkbox">Food or food contact</Checkbox>
                 </Form.Item>
                 <Form.Item name="wireless" valuePropName="checked" className="!mb-0">
-                  <Checkbox className="sourcify-checkbox">Wireless/radio frequency</Checkbox>
+                  <Checkbox className="tarifyx-checkbox">Wireless/radio frequency</Checkbox>
                 </Form.Item>
                 <Form.Item name="medicalDevice" valuePropName="checked" className="!mb-0">
-                  <Checkbox className="sourcify-checkbox">Medical device</Checkbox>
+                  <Checkbox className="tarifyx-checkbox">Medical device</Checkbox>
                 </Form.Item>
               </div>
             </div>
@@ -261,7 +267,7 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
                 htmlType="submit"
                 size="large"
                 loading={loading}
-                className="bg-gradient-to-b from-blue-600 to-violet-600 border-none shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-4px_rgba(0,0,0,0.1)] px-6"
+                className="bg-teal-600 hover:bg-teal-700 border-none shadow-sm px-6"
               >
                 Analyze Product
                 <ChevronRight size={16} className="ml-2" />
@@ -270,22 +276,22 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
           </Form>
         </Card>
         <style jsx global>{`
-          .sourcify-checkbox .ant-checkbox-inner {
+          .tarifyx-checkbox .ant-checkbox-inner {
             border-color: #cbd5e1;
           }
 
-          .sourcify-checkbox .ant-checkbox-checked .ant-checkbox-inner {
+          .tarifyx-checkbox .ant-checkbox-checked .ant-checkbox-inner {
             border-color: transparent;
-            background-image: linear-gradient(180deg, #155dfc 0%, #4f39f6 100%);
+            background-color: #0D9488;
           }
 
-          .sourcify-checkbox .ant-checkbox-checked .ant-checkbox-inner::after {
+          .tarifyx-checkbox .ant-checkbox-checked .ant-checkbox-inner::after {
             border-color: #ffffff;
           }
 
-          .sourcify-checkbox:hover .ant-checkbox-inner,
-          .sourcify-checkbox .ant-checkbox-input:focus + .ant-checkbox-inner {
-            border-color: #7aa3ff;
+          .tarifyx-checkbox:hover .ant-checkbox-inner,
+          .tarifyx-checkbox .ant-checkbox-input:focus + .ant-checkbox-inner {
+            border-color: #0D9488;
           }
         `}</style>
       </div>

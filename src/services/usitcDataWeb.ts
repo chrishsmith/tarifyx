@@ -7,7 +7,7 @@
  * Base URL: https://datawebws.usitc.gov/dataweb
  * 
  * ═══════════════════════════════════════════════════════════════════════════════
- * IMPORTANT: DATA SOURCE LIMITATIONS (December 2025)
+ * IMPORTANT: DATA SOURCE LIMITATIONS (February 2026)
  * ═══════════════════════════════════════════════════════════════════════════════
  * 
  * This API provides:
@@ -34,28 +34,85 @@
  * - China faces 145%+ total additional duties
  * 
  * Always use calculateEffectiveTariff() from landedCost.ts or
- * calculateEffectiveTariff() from additionalDuties.ts for accurate rates.
+ * getEffectiveTariff() from registry.ts for accurate rates.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 const DATAWEB_API_BASE = 'https://datawebws.usitc.gov/dataweb';
 
-interface ImportStatsByCountry {
+/** Request timeout for USITC DataWeb API calls (15 seconds) */
+const DATAWEB_REQUEST_TIMEOUT_MS = 15_000;
+
+export interface ImportStatsByCountry {
     countryCode: string;
     countryName: string;
     totalValue: number;
     totalQuantity: number;
+    /** Raw USITC quantity unit (e.g. "dozens", "number", "kilograms") */
     quantityUnit: string;
+    /** Average value per USITC statistical unit (may be per-dozen, per-kg, etc.) */
     avgUnitValue: number;
+    /** Normalized per-piece value when possible (dozens→÷12). Null when unit can't be converted (e.g. kg). */
+    avgPerPieceValue: number | null;
+    /** The display unit after normalization ("each", "kg", "liter", etc.) */
+    normalizedUnit: string;
     shipmentCount: number;
     dataYears: number[];
+    /** Per-year value breakdown for trend analysis */
+    yearlyValue?: { year: number; value: number; quantity: number; avgUnit: number }[];
+    /** YoY unit cost trend: positive = costs rising, negative = costs falling */
+    costTrendPercent?: number;
+}
+
+/**
+ * Normalize USITC statistical unit value to per-piece when possible.
+ * USITC reports quantity in the unit defined in the HTS schedule:
+ * - Apparel: "dozens" (divide by 12)
+ * - Electronics: "number" (already per-piece)
+ * - Bulk goods: "kilograms", "liters", etc. (can't normalize without weight data)
+ * - Some codes: "gross" = 144 pieces, "pairs", "square meters", etc.
+ */
+function normalizeToPerPiece(avgUnitValue: number, quantityUnit: string): { value: number | null; unit: string } {
+    const unitLower = quantityUnit.toLowerCase().trim();
+
+    // Already per-piece
+    if (unitLower === 'number' || unitLower === 'no.' || unitLower === 'each' || unitLower === '') {
+        return { value: avgUnitValue, unit: 'each' };
+    }
+
+    // Dozens → divide by 12
+    if (unitLower === 'dozens' || unitLower === 'dozen' || unitLower === 'doz') {
+        return { value: Math.round((avgUnitValue / 12) * 100) / 100, unit: 'each' };
+    }
+
+    // Gross → divide by 144
+    if (unitLower === 'gross') {
+        return { value: Math.round((avgUnitValue / 144) * 100) / 100, unit: 'each' };
+    }
+
+    // Pairs → divide by 2 (for shoes, gloves, etc.)
+    if (unitLower === 'pairs' || unitLower === 'pair' || unitLower === 'prs') {
+        return { value: Math.round((avgUnitValue / 2) * 100) / 100, unit: 'each' };
+    }
+
+    // Weight/volume units can't be converted to per-piece without product-specific data
+    // Return null for value but preserve the unit for display
+    if (unitLower === 'kilograms' || unitLower === 'kg') return { value: null, unit: 'kg' };
+    if (unitLower === 'liters' || unitLower === 'liter' || unitLower === 'l') return { value: null, unit: 'liter' };
+    if (unitLower === 'metric tons' || unitLower === 'tons') return { value: null, unit: 'ton' };
+    if (unitLower === 'square meters' || unitLower === 'sqm') return { value: null, unit: 'sqm' };
+
+    // Unknown unit — can't normalize
+    return { value: null, unit: quantityUnit };
 }
 
 interface DataWebRow {
     country: string;
     quantityDesc: string;
-    year2023: number;
-    year2024: number;
+    /** Value for the first year in the query (e.g. 2025 when years=[2025,2024]) */
+    yearA: number;
+    /** Value for the second year in the query (e.g. 2024 when years=[2025,2024]) */
+    yearB: number;
 }
 
 /**
@@ -168,18 +225,10 @@ function parseDataWebResponse(responseData: any, years: number[]): DataWebRow[] 
         
         const rowGroups = tables[0]?.row_groups || [];
         if (rowGroups.length === 0) {
-            console.log('[DataWeb] No row groups in response');
             return results;
         }
         
         const rows = rowGroups[0]?.rowsNew || [];
-        console.log('[DataWeb] Found', rows.length, 'data rows');
-        
-        // Debug first row structure
-        if (rows.length > 0 && rows[0]?.rowEntries) {
-            console.log('[DataWeb] First row columns:', rows[0].rowEntries.length);
-            console.log('[DataWeb] First row sample:', rows[0].rowEntries.slice(0, 5).map((e: any) => e?.value));
-        }
         
         for (const row of rows) {
             const entries = row.rowEntries || [];
@@ -218,8 +267,8 @@ function parseDataWebResponse(responseData: any, years: number[]): DataWebRow[] 
                     results.push({
                         country,
                         quantityDesc,
-                        year2023: year1,  // First year in query
-                        year2024: year2,  // Second year in query
+                        yearA: year1,
+                        yearB: year2,
                     });
                 }
             }
@@ -408,7 +457,10 @@ async function queryDataWeb(htsCode: string, years: number[], dataType: string =
     
     const queryBody = buildDataWebQuery(htsCode, years, dataType);
     
-    console.log('[DataWeb] Querying HTS:', htsCode, 'Years:', years.join(', '), 'DataType:', dataType);
+    console.log(`[DataWeb] Querying HTS ${htsCode} | ${years.join(',')} | ${dataType}`);
+    
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), DATAWEB_REQUEST_TIMEOUT_MS);
     
     try {
         const response = await fetch(`${DATAWEB_API_BASE}/api/v2/report2/runReport`, {
@@ -419,6 +471,7 @@ async function queryDataWeb(htsCode: string, years: number[], dataType: string =
                 'Accept': 'application/json',
             },
             body: JSON.stringify(queryBody),
+            signal: controller.signal,
         });
         
         if (!response.ok) {
@@ -434,12 +487,17 @@ async function queryDataWeb(htsCode: string, years: number[], dataType: string =
             return null;
         }
         
-        console.log('[DataWeb] Response received, tables:', data?.dto?.tables?.length || 0);
         return data;
         
     } catch (error) {
-        console.error('[DataWeb] Query failed:', error);
+        if (error instanceof DOMException && error.name === 'AbortError') {
+            console.error(`[DataWeb] Request timed out after ${DATAWEB_REQUEST_TIMEOUT_MS}ms for HTS ${htsCode}`);
+        } else {
+            console.error('[DataWeb] Query failed:', error);
+        }
         return null;
+    } finally {
+        clearTimeout(timeout);
     }
 }
 
@@ -454,49 +512,37 @@ export async function getImportStatsByHTS(
         minQuantity?: number;
     } = {}
 ): Promise<ImportStatsByCountry[]> {
-    // USITC has data through Sept 2025, full 2024 available
-    // Pull current year + previous year for freshest data
-    const years = options.years || [2025, 2024];
+    // USITC DataWeb lags: data is typically available through ~Nov of the prior year.
+    // Always query (currentYear - 1) and (currentYear - 2) to ensure we hit valid years.
+    // Example: in Feb 2026, query [2025, 2024] since 2026 data doesn't exist yet.
+    const currentYear = new Date().getFullYear();
+    const years = options.years || [currentYear - 1, currentYear - 2];
     const minQuantity = options.minQuantity || 1000;
     
-    console.log(`[DataWeb] Fetching import stats for HTS ${htsCode}`);
+    console.log(`[DataWeb] Fetching import stats for HTS ${htsCode}, years ${years.join(',')}`);
     
-    // Query quantity data
-    const quantityResponse = await queryDataWeb(htsCode, years, 'CONS_FIR_UNIT_QUANT');
+    // Query quantity and value data in parallel for speed
+    const [quantityResponse, valueResponse] = await Promise.all([
+        queryDataWeb(htsCode, years, 'CONS_FIR_UNIT_QUANT'),
+        queryDataWeb(htsCode, years, 'CONS_CUSTOMS_VALUE'),
+    ]);
+    
     if (!quantityResponse) {
         console.log('[DataWeb] No quantity response');
         return [];
     }
     
     const quantityData = parseDataWebResponse(quantityResponse, years);
-    console.log('[DataWeb] Parsed', quantityData.length, 'quantity records');
-    
-    // Query customs value data
-    const valueResponse = await queryDataWeb(htsCode, years, 'CONS_CUSTOMS_VALUE');
-    console.log('[DataWeb] Value response tables:', valueResponse?.dto?.tables?.length || 0);
     const valueData = valueResponse ? parseDataWebResponse(valueResponse, years) : [];
-    console.log('[DataWeb] Parsed value records:', valueData.length);
     
     // Create a map of country -> value
-    const valueByCountry = new Map<string, { year2023: number; year2024: number }>();
+    const valueByCountry = new Map<string, { yearA: number; yearB: number }>();
     for (const row of valueData) {
-        valueByCountry.set(row.country, { year2023: row.year2023, year2024: row.year2024 });
+        valueByCountry.set(row.country, { yearA: row.yearA, yearB: row.yearB });
     }
     
     // Combine quantity and value data
     const stats: ImportStatsByCountry[] = [];
-    
-    // Debug: Log first few countries to understand data format
-    console.log('[DataWeb] Sample quantity data:', quantityData.slice(0, 3).map(r => ({
-        country: r.country,
-        qty2023: r.year2023,
-        qty2024: r.year2024,
-    })));
-    console.log('[DataWeb] Sample value data:', valueData.slice(0, 3).map(r => ({
-        country: r.country,
-        val2023: r.year2023,
-        val2024: r.year2024,
-    })));
     
     let unmappedCountries = 0;
     let lowQuantity = 0;
@@ -507,21 +553,20 @@ export async function getImportStatsByHTS(
         const countryCode = mapCountryToCode(qtyRow.country);
         if (!countryCode) {
             unmappedCountries++;
-            // Log first few unmapped
-            if (unmappedCountries <= 5) {
+            if (unmappedCountries <= 3) {
                 console.log('[DataWeb] Unmapped country:', qtyRow.country);
             }
             continue;
         }
         
-        const totalQuantity = qtyRow.year2023 + qtyRow.year2024;
+        const totalQuantity = qtyRow.yearA + qtyRow.yearB;
         if (totalQuantity < minQuantity) {
             lowQuantity++;
             continue;
         }
         
         const valueRow = valueByCountry.get(qtyRow.country);
-        const totalValue = valueRow ? (valueRow.year2023 + valueRow.year2024) : 0;
+        const totalValue = valueRow ? (valueRow.yearA + valueRow.yearB) : 0;
         
         if (!valueRow) {
             noValue++;
@@ -533,30 +578,64 @@ export async function getImportStatsByHTS(
             ? totalValue / totalQuantity
             : 0;
         
-        // Only include if we have reasonable unit values
-        if (avgUnitValue > 0 && avgUnitValue < 10000) {
+        // Filter out nonsensical unit values (zero or negative)
+        // Note: No upper cap — industrial machinery, electronics, etc. can legitimately
+        // have very high unit values ($50K+ per unit for CNC machines, semiconductors, etc.)
+        if (avgUnitValue > 0) {
+            // Build per-year breakdown for trend analysis
+            const yearlyValue: { year: number; value: number; quantity: number; avgUnit: number }[] = [];
+            if (qtyRow.yearA > 0 && valueRow.yearA > 0) {
+                yearlyValue.push({
+                    year: years[0],
+                    value: Math.round(valueRow.yearA),
+                    quantity: Math.round(qtyRow.yearA),
+                    avgUnit: Math.round((valueRow.yearA / qtyRow.yearA) * 100) / 100,
+                });
+            }
+            if (qtyRow.yearB > 0 && valueRow.yearB > 0) {
+                yearlyValue.push({
+                    year: years[1],
+                    value: Math.round(valueRow.yearB),
+                    quantity: Math.round(qtyRow.yearB),
+                    avgUnit: Math.round((valueRow.yearB / qtyRow.yearB) * 100) / 100,
+                });
+            }
+
+            // Calculate YoY cost trend (yearA is more recent, yearB is older)
+            let costTrendPercent: number | undefined;
+            if (yearlyValue.length === 2 && yearlyValue[1].avgUnit > 0) {
+                const recent = yearlyValue[0].avgUnit;
+                const older = yearlyValue[1].avgUnit;
+                costTrendPercent = Math.round(((recent - older) / older) * 100);
+            }
+
+            const rawUnit = qtyRow.quantityDesc || 'units';
+            const normalized = normalizeToPerPiece(avgUnitValue, rawUnit);
+
             stats.push({
                 countryCode,
                 countryName: qtyRow.country,
                 totalValue: Math.round(totalValue),
                 totalQuantity: Math.round(totalQuantity),
-                quantityUnit: qtyRow.quantityDesc || 'units',
+                quantityUnit: rawUnit,
                 avgUnitValue: Math.round(avgUnitValue * 100) / 100,
+                avgPerPieceValue: normalized.value !== null ? Math.round(normalized.value * 100) / 100 : null,
+                normalizedUnit: normalized.unit,
                 shipmentCount: Math.ceil(totalQuantity / 10000), // Estimate
                 dataYears: years,
+                yearlyValue,
+                costTrendPercent,
             });
         } else {
             invalidAvg++;
         }
     }
     
-    console.log('[DataWeb] Filter summary: unmapped=' + unmappedCountries + 
-        ', lowQty=' + lowQuantity + ', noValue=' + noValue + ', invalidAvg=' + invalidAvg);
+    console.log(`[DataWeb] HTS ${htsCode}: ${stats.length} countries (filtered: unmapped=${unmappedCountries}, lowQty=${lowQuantity}, noVal=${noValue}, invalid=${invalidAvg})`);
     
     // Sort by total value descending
     stats.sort((a, b) => b.totalValue - a.totalValue);
     
-    console.log(`[DataWeb] Final: ${stats.length} countries with data`);
     return stats;
 }
 

@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { Card, Typography, Progress, Tag, Button, Tooltip, Alert, Collapse, message, Dropdown, Space, Modal, Input, Form } from 'antd';
-import { Copy, FileText, AlertTriangle, ExternalLink, HelpCircle, Check, Download, Bookmark, BookmarkCheck, Bell, ChevronDown, Save } from 'lucide-react';
+import { Copy, FileText, AlertTriangle, ExternalLink, HelpCircle, Check, Download, Bookmark, BookmarkCheck, Bell, ChevronDown, Save, Target, Hash } from 'lucide-react';
 import type { ClassificationResult } from '@/types/classification.types';
 import { ConditionalClassificationCard } from './ConditionalClassificationCard';
 import { TariffBreakdown } from './TariffBreakdown';
@@ -440,28 +440,100 @@ export const ClassificationResultDisplay: React.FC<ClassificationResultDisplayPr
                     </div>
 
                     {/* Confidence Score */}
-                    <div className="w-full lg:w-44 flex flex-col items-center lg:items-center">
+                    <div className="w-full lg:w-56 flex flex-col items-center lg:items-center">
                         <Text className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-3">
                             Confidence
                         </Text>
                         <Progress
                             type="circle"
-                            percent={result.confidence}
+                            percent={result.splitConfidence?.combined ?? result.confidence}
                             size={110}
                             strokeWidth={8}
-                            strokeColor={getConfidenceColor(result.confidence)}
+                            strokeColor={getConfidenceColor(result.splitConfidence?.combined ?? result.confidence)}
                             format={(percent) => (
-                                <span className="text-2xl font-bold" style={{ color: getConfidenceColor(result.confidence) }}>
+                                <span className="text-2xl font-bold" style={{ color: getConfidenceColor(result.splitConfidence?.combined ?? result.confidence) }}>
                                     {percent}%
                                 </span>
                             )}
                         />
                         <Text
                             className="block text-center mt-3 text-sm font-medium"
-                            style={{ color: getConfidenceColor(result.confidence) }}
+                            style={{ color: getConfidenceColor(result.splitConfidence?.combined ?? result.confidence) }}
                         >
-                            {getConfidenceLabel(result.confidence)}
+                            {getConfidenceLabel(result.splitConfidence?.combined ?? result.confidence)}
                         </Text>
+
+                        {/* Split Confidence Breakdown */}
+                        {result.splitConfidence && (
+                            <div className="w-full mt-4 space-y-2.5">
+                                {/* Heading Confidence */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <div className="flex items-center gap-1.5">
+                                            <Target size={12} className="text-teal-600" />
+                                            <span className="text-xs font-medium text-slate-600">Heading</span>
+                                        </div>
+                                        <span className="text-xs font-bold text-slate-800">
+                                            {result.splitConfidence.heading}%
+                                        </span>
+                                    </div>
+                                    <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full rounded-full transition-all duration-500"
+                                            style={{
+                                                width: `${result.splitConfidence.heading}%`,
+                                                backgroundColor: getConfidenceColor(result.splitConfidence.heading),
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                                {/* Code Confidence */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <div className="flex items-center gap-1.5">
+                                            <Hash size={12} className="text-teal-600" />
+                                            <span className="text-xs font-medium text-slate-600">Exact Code</span>
+                                        </div>
+                                        <span className="text-xs font-bold text-slate-800">
+                                            {result.splitConfidence.code}%
+                                        </span>
+                                    </div>
+                                    <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full rounded-full transition-all duration-500"
+                                            style={{
+                                                width: `${result.splitConfidence.code}%`,
+                                                backgroundColor: getConfidenceColor(result.splitConfidence.code),
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Heading method badge */}
+                                {result.headingPrediction && (
+                                    <div className="flex items-center justify-center gap-1.5 pt-1">
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                                            result.headingPrediction.method === 'deterministic'
+                                                ? 'bg-green-100 text-green-700'
+                                                : result.headingPrediction.method === 'setfit'
+                                                    ? 'bg-purple-100 text-purple-700'
+                                                    : 'bg-blue-100 text-blue-700'
+                                        }`}>
+                                            {result.headingPrediction.method === 'deterministic'
+                                                ? 'Pattern Match'
+                                                : result.headingPrediction.method === 'setfit'
+                                                    ? 'ML Model'
+                                                    : 'AI Analysis'}
+                                        </span>
+                                        {result.headingPrediction.constrained && (
+                                            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-teal-100 text-teal-700">
+                                                Gated
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             </Card>
@@ -488,7 +560,7 @@ export const ClassificationResultDisplay: React.FC<ClassificationResultDisplayPr
 
                     {/* Heading Context */}
                     {result.valueDependentClassification.headingDescription && (
-                        <div className="mb-4 p-2 bg-white/50 rounded-lg">
+                        <div className="mb-4 p-2 bg-slate-50 rounded-lg">
                             <Text className="text-slate-600 text-xs">
                                 <strong>Heading {result.valueDependentClassification.baseHeading}:</strong> {result.valueDependentClassification.headingDescription}
                             </Text>
@@ -559,7 +631,7 @@ export const ClassificationResultDisplay: React.FC<ClassificationResultDisplayPr
                     </div>
 
                     {/* Guidance */}
-                    <div className="mt-4 p-3 bg-white/70 rounded-lg border border-amber-200">
+                    <div className="mt-4 p-3 bg-white rounded-lg border border-amber-200">
                         <Text className="text-amber-800 text-xs">
                             💡 <strong>Tip:</strong> The value threshold is typically the FOB (Free on Board) value at the time of import. If unsure, consult with your customs broker.
                         </Text>
@@ -858,7 +930,7 @@ function generateTextReport(result: ClassificationResult): string {
     }
 
     lines.push('═══════════════════════════════════════════════════════════');
-    lines.push('Generated by Sourcify - AI-Powered Trade Compliance');
+    lines.push('Generated by Tarifyx - AI-Powered Import Intelligence');
     lines.push('═══════════════════════════════════════════════════════════');
 
     return lines.filter(l => l !== undefined).join('\n');

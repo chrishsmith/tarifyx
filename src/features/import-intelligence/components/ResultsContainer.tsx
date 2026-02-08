@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Card, Collapse, Typography, Tag, Button, Space, Tooltip, Progress, Alert } from 'antd';
-import { Edit, FileText, Download, Share2, Save, Info, AlertTriangle, TrendingUp, HelpCircle } from 'lucide-react';
+import { Edit, Download, Share2, Save, HelpCircle } from 'lucide-react';
 import type { ImportAnalysis, DutyLayer } from '../types';
 import { CountryCompareSection } from './CountryCompareSection';
 import { ComplianceSection } from './ComplianceSection';
@@ -25,7 +25,7 @@ const TOOLTIPS = {
   ieepaReciprocal: 'Country-specific reciprocal tariff above the 10% baseline. Varies by country based on their tariff rates on US goods.',
   section232: 'Trade Expansion Act of 1962, Section 232 - National security tariffs on steel (25%), aluminum (25%), and automobiles (25%).',
   adcvd: 'Antidumping and Countervailing Duties - Additional duties on products sold below fair market value (dumping) or subsidized by foreign governments.',
-  mpf: 'Merchandise Processing Fee - CBP fee of 0.3464% of dutiable value, with minimum $31.67 and maximum $614.35 per entry.',
+  mpf: 'Merchandise Processing Fee - CBP fee of 0.3464% of dutiable value, with minimum $33.58 and maximum $651.50 per entry (FY2026).',
   hmf: 'Harbor Maintenance Fee - 0.125% of cargo value for ocean shipments. Funds port infrastructure maintenance. Does not apply to air shipments.',
   effectiveRate: 'The total duty rate after combining all applicable tariff programs. This is what you actually pay as a percentage of dutiable value.',
   ftaDiscount: 'Free Trade Agreement benefit that waives the base MFN duty. Note: FTAs do NOT waive IEEPA tariffs (except USMCA for compliant goods).',
@@ -81,7 +81,7 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <Title level={3} className="!mb-2">
-              🧭 Import Intelligence
+              Import Intelligence
             </Title>
             <Text className="text-slate-600 text-base">
               {analysis.input.description || `HTS ${classification.htsCode}`} •{' '}
@@ -99,7 +99,7 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
 
       {/* Collapsible Sections */}
       <Collapse
-        defaultActiveKey={['classification', 'landedCost']}
+        defaultActiveKey={['classification', 'landedCost', 'countryComparison']}
         expandIconPlacement="end"
         className="bg-white shadow-sm"
         size="large"
@@ -127,7 +127,7 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
             key: 'landedCost',
             label: (
               <div className="flex items-center gap-3">
-                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600 text-white flex items-center justify-center text-sm font-semibold">
+                <div className="w-7 h-7 rounded-lg bg-teal-600 text-white flex items-center justify-center text-sm font-semibold">
                   2
                 </div>
                 <span className="font-semibold text-base">Landed Cost</span>
@@ -141,7 +141,7 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
             label: (
               <div className="flex items-center justify-between w-full">
                 <div className="flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 text-white flex items-center justify-center text-sm font-semibold">
+                  <div className="w-7 h-7 rounded-lg bg-violet-600 text-white flex items-center justify-center text-sm font-semibold">
                     3
                   </div>
                   <span className="font-semibold text-base">Compare Countries</span>
@@ -149,7 +149,7 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
                 <Tag color="green">{countryComparison.alternatives.length} alternatives</Tag>
               </div>
             ),
-            children: <CountryCompareSection comparison={countryComparison} />,
+            children: <CountryCompareSection comparison={countryComparison} htsCode={classification.htsCode} quantity={analysis.input.quantity} />,
           },
           // 4. Compliance & Risk
           {
@@ -157,7 +157,7 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
             label: (
               <div className="flex items-center justify-between w-full">
                 <div className="flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500 to-amber-600 text-white flex items-center justify-center text-sm font-semibold">
+                  <div className="w-7 h-7 rounded-lg bg-amber-600 text-white flex items-center justify-center text-sm font-semibold">
                     4
                   </div>
                   <span className="font-semibold text-base">Compliance & Risk</span>
@@ -175,7 +175,7 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
             label: (
               <div className="flex items-center justify-between w-full">
                 <div className="flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 text-white flex items-center justify-center text-sm font-semibold">
+                  <div className="w-7 h-7 rounded-lg bg-slate-600 text-white flex items-center justify-center text-sm font-semibold">
                     5
                   </div>
                   <span className="font-semibold text-base">Documentation Required</span>
@@ -193,7 +193,7 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
             label: (
               <div className="flex items-center justify-between w-full">
                 <div className="flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-green-500 to-green-600 text-white flex items-center justify-center text-sm font-semibold">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-sm font-semibold">
                     6
                   </div>
                   <span className="font-semibold text-base">Optimization Opportunities</span>

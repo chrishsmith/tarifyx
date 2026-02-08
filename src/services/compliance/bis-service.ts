@@ -57,7 +57,7 @@ interface ParsedBISEntry {
 async function downloadFile(url: string): Promise<{ content: string; lastModified: Date | null }> {
   const response = await fetch(url, {
     headers: {
-      'User-Agent': 'Sourcify Trade Intelligence Platform',
+      'User-Agent': 'Tarifyx Import Intelligence Platform',
       'Accept': 'application/json, text/csv, text/plain, */*',
     },
   });
@@ -80,7 +80,7 @@ async function downloadFile(url: string): Promise<{ content: string; lastModifie
 async function downloadConsolidatedList(): Promise<{ content: unknown[]; lastModified: Date | null }> {
   const response = await fetch(TRADE_GOV_CSL_URL, {
     headers: {
-      'User-Agent': 'Sourcify Trade Intelligence Platform',
+      'User-Agent': 'Tarifyx Import Intelligence Platform',
       'Accept': 'application/json',
     },
   });

@@ -1,5 +1,10 @@
 /**
- * HTS Classification Engine v2
+ * HTS Classification Engine v2 (DEPRECATED)
+ * 
+ * @deprecated Use engine-v10.ts (classifyV10) instead. This engine is slower
+ * (makes 2+ AI calls in the critical path) and less accurate than V10.
+ * Kept temporarily for the /api/classify and /api/classify/bulk routes
+ * which should be migrated to V10.
  * 
  * A robust, multi-phase classification system that:
  * 1. Analyzes the product to understand its essential character
@@ -384,6 +389,7 @@ export async function selectBestCode(
                 { role: 'user', content: prompt }
             ],
             temperature: 0.1,
+            response_format: { type: 'json_object' },
         });
         
         const responseText = completion.choices[0]?.message?.content || '{}';

@@ -390,7 +390,7 @@ const ClassificationReportDocument = ({ data }: { data: ClassificationPDFData })
         createElement(Page, { size: 'A4', style: styles.page },
             // Header
             createElement(View, { style: styles.header },
-                createElement(Text, { style: styles.logo }, 'Sourcify'),
+                createElement(Text, { style: styles.logo }, 'Tarifyx'),
                 createElement(Text, { style: styles.tagline }, 'Trade Intelligence Platform'),
                 createElement(Text, { style: styles.reportTitle }, 'HTS Classification Report'),
                 createElement(Text, { style: styles.reportDate }, `Generated: ${formatDate(classifiedAt)}`)
@@ -468,13 +468,13 @@ const ClassificationReportDocument = ({ data }: { data: ClassificationPDFData })
                     'The determination of the correct HTS classification is the responsibility of the importer. ' +
                     'Duty rates are subject to change and may be affected by special programs, trade agreements, or pending legislation. ' +
                     'Always verify classifications with U.S. Customs and Border Protection or a licensed customs broker before importing. ' +
-                    'Sourcify makes no warranties regarding the accuracy of this classification.'
+                    'Tarifyx makes no warranties regarding the accuracy of this classification.'
                 )
             ),
 
             // Footer
             createElement(View, { style: styles.footer, fixed: true },
-                createElement(Text, { style: styles.footerText }, 'Sourcify Trade Intelligence Platform - www.sourcify.io'),
+                createElement(Text, { style: styles.footerText }, 'Tarifyx Trade Intelligence Platform - www.tarifyx.com'),
                 createElement(Text, { style: styles.pageNumber, render: ({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) => 
                     `Page ${pageNumber} of ${totalPages}`
                 })
@@ -485,7 +485,7 @@ const ClassificationReportDocument = ({ data }: { data: ClassificationPDFData })
         aiReasoning && createElement(Page, { size: 'A4', style: styles.page },
             // Header
             createElement(View, { style: styles.header },
-                createElement(Text, { style: styles.logo }, 'Sourcify'),
+                createElement(Text, { style: styles.logo }, 'Tarifyx'),
                 createElement(Text, { style: styles.tagline }, 'Trade Intelligence Platform'),
                 createElement(Text, { style: styles.reportTitle }, 'AI Classification Reasoning')
             ),
@@ -563,7 +563,7 @@ const ClassificationReportDocument = ({ data }: { data: ClassificationPDFData })
 
             // Footer
             createElement(View, { style: styles.footer, fixed: true },
-                createElement(Text, { style: styles.footerText }, 'Sourcify Trade Intelligence Platform - www.sourcify.io'),
+                createElement(Text, { style: styles.footerText }, 'Tarifyx Trade Intelligence Platform - www.tarifyx.com'),
                 createElement(Text, { style: styles.pageNumber, render: ({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) => 
                     `Page ${pageNumber} of ${totalPages}`
                 })
@@ -597,7 +597,7 @@ export async function exportClassificationPDF(data: ClassificationPDFData): Prom
             .replace(/-+/g, '-')
             .replace(/^-|-$/g, '')
             .toLowerCase();
-        const filename = `sourcify-classification-${htsCode}-${productSnippet}-${date}.pdf`;
+        const filename = `tarifyx-classification-${htsCode}-${productSnippet}-${date}.pdf`;
         
         // Trigger download
         const url = URL.createObjectURL(blob);

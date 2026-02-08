@@ -1,18 +1,27 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Form, Input, Button, Checkbox, message, Divider, Tabs } from 'antd';
-import { User, Lock, ArrowRight, Github } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect } from 'react';
+import { Form, Input, Button, Checkbox, message, Tabs } from 'antd';
+import { User, Lock, ArrowRight, Mail } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 
 export const LoginForm: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [mode, setMode] = useState<'signin' | 'signup'>('signin');
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [form] = Form.useForm();
 
-    const onFinish = async (values: any) => {
+    // Respect ?mode=signup from landing page CTA
+    useEffect(() => {
+        const urlMode = searchParams.get('mode');
+        if (urlMode === 'signup') {
+            setMode('signup');
+        }
+    }, [searchParams]);
+
+    const onFinish = async (values: { email: string; password: string; name?: string; remember?: boolean }) => {
         setLoading(true);
         try {
             if (mode === 'signup') {
@@ -22,16 +31,14 @@ export const LoginForm: React.FC = () => {
                     name: values.name || values.email.split('@')[0],
                 });
 
-                console.log('Sign-up response:', { data, error });
-
                 if (error) {
-                    console.error('Sign-up error details:', error);
+                    console.error('[LoginForm] sign_up_error', { ts: new Date().toISOString(), error });
                     message.error(error.message || 'Failed to create account');
                     return;
                 }
 
-                message.success('Account created! You are now signed in.');
-                router.push('/dashboard');
+                message.success('Account created! Let\'s classify your first product.');
+                router.push('/onboarding');
             } else {
                 const { data, error } = await authClient.signIn.email({
                     email: values.email,
@@ -43,12 +50,12 @@ export const LoginForm: React.FC = () => {
                     return;
                 }
 
-                message.success('Welcome back to Sourcify');
+                message.success('Welcome back to Tarifyx');
                 router.push('/dashboard');
             }
         } catch (err) {
+            console.error('[LoginForm] auth_error', { ts: new Date().toISOString(), error: err });
             message.error('An unexpected error occurred');
-            console.error(err);
         } finally {
             setLoading(false);
         }
@@ -96,7 +103,7 @@ export const LoginForm: React.FC = () => {
                     ]}
                 >
                     <Input
-                        prefix={<User size={18} className="text-slate-400" />}
+                        prefix={<Mail size={18} className="text-slate-400" />}
                         placeholder="Email address"
                         className="rounded-lg"
                     />
@@ -104,11 +111,14 @@ export const LoginForm: React.FC = () => {
 
                 <Form.Item
                     name="password"
-                    rules={[{ required: true, message: 'Please input your password!' }]}
+                    rules={[
+                        { required: true, message: 'Please input your password!' },
+                        ...(mode === 'signup' ? [{ min: 8, message: 'Password must be at least 8 characters' }] : []),
+                    ]}
                 >
                     <Input.Password
                         prefix={<Lock size={18} className="text-slate-400" />}
-                        placeholder="Password"
+                        placeholder={mode === 'signup' ? 'Password (8+ characters)' : 'Password'}
                         className="rounded-lg"
                     />
                 </Form.Item>
@@ -119,9 +129,6 @@ export const LoginForm: React.FC = () => {
                             <Form.Item name="remember" valuePropName="checked" noStyle>
                                 <Checkbox>Remember me</Checkbox>
                             </Form.Item>
-                            <a href="#" className="text-teal-600 hover:text-teal-700 font-medium text-sm">
-                                Forgot password?
-                            </a>
                         </div>
                     </Form.Item>
                 )}
@@ -133,23 +140,18 @@ export const LoginForm: React.FC = () => {
                         block
                         loading={loading}
                         icon={<ArrowRight size={18} />}
-                        className="h-12 bg-teal-600 hover:bg-teal-500 border-none shadow-lg shadow-teal-600/30 font-medium text-base"
+                        className="h-12 bg-teal-600 hover:bg-teal-500 border-none shadow-sm font-medium text-base"
                     >
                         {mode === 'signin' ? 'Sign In' : 'Create Account'}
                     </Button>
                 </Form.Item>
             </Form>
 
-            <Divider plain><span className="text-slate-400 text-xs uppercase font-medium">Or continue with</span></Divider>
-
-            <div className="grid grid-cols-2 gap-4">
-                <Button block icon={<Github size={16} />} className="h-10 mt-2">
-                    Github
-                </Button>
-                <Button block className="h-10 mt-2 font-medium">
-                    SSO
-                </Button>
-            </div>
+            {mode === 'signup' && (
+                <p className="text-center text-xs text-slate-400 mt-4">
+                    Free plan includes 5 classifications/day. No credit card required.
+                </p>
+            )}
         </div>
     );
 };

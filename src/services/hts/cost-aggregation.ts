@@ -252,67 +252,60 @@ export async function aggregateHtsCosts(
 }
 
 /**
- * Save aggregated costs to database
+ * Save aggregated costs to database using batch upserts
+ * Uses $transaction to avoid N+1 queries (one upsert per country → single transaction)
  */
 export async function saveAggregatedCosts(
     results: CostAggregationResult[]
 ): Promise<{ created: number; updated: number }> {
-    let created = 0;
-    let updated = 0;
+    if (results.length === 0) return { created: 0, updated: 0 };
     
-    for (const result of results) {
-        const existing = await prisma.htsCostByCountry.findUnique({
+    const upsertOps = results.map(result =>
+        prisma.htsCostByCountry.upsert({
             where: {
                 htsCode_countryCode: {
                     htsCode: result.htsCode,
                     countryCode: result.countryCode,
                 },
             },
-        });
-        
-        if (existing) {
-            await prisma.htsCostByCountry.update({
-                where: { id: existing.id },
-                data: {
-                    avgUnitValue: result.avgUnitValue,
-                    medianUnitValue: result.medianUnitValue,
-                    minUnitValue: result.minUnitValue,
-                    maxUnitValue: result.maxUnitValue,
-                    stdDeviation: result.stdDeviation,
-                    shipmentCount: result.shipmentCount,
-                    totalQuantity: result.totalQuantity,
-                    totalValue: result.totalValue,
-                    confidenceScore: result.confidenceScore,
-                    oldestShipment: result.oldestShipment,
-                    newestShipment: result.newestShipment,
-                    lastCalculated: new Date(),
-                },
-            });
-            updated++;
-        } else {
-            await prisma.htsCostByCountry.create({
-                data: {
-                    htsCode: result.htsCode,
-                    countryCode: result.countryCode,
-                    countryName: result.countryName,
-                    avgUnitValue: result.avgUnitValue,
-                    medianUnitValue: result.medianUnitValue,
-                    minUnitValue: result.minUnitValue,
-                    maxUnitValue: result.maxUnitValue,
-                    stdDeviation: result.stdDeviation,
-                    shipmentCount: result.shipmentCount,
-                    totalQuantity: result.totalQuantity,
-                    totalValue: result.totalValue,
-                    confidenceScore: result.confidenceScore,
-                    oldestShipment: result.oldestShipment,
-                    newestShipment: result.newestShipment,
-                },
-            });
-            created++;
-        }
-    }
+            update: {
+                countryName: result.countryName,
+                avgUnitValue: result.avgUnitValue,
+                medianUnitValue: result.medianUnitValue,
+                minUnitValue: result.minUnitValue,
+                maxUnitValue: result.maxUnitValue,
+                stdDeviation: result.stdDeviation,
+                shipmentCount: result.shipmentCount,
+                totalQuantity: result.totalQuantity,
+                totalValue: result.totalValue,
+                confidenceScore: result.confidenceScore,
+                oldestShipment: result.oldestShipment,
+                newestShipment: result.newestShipment,
+                lastCalculated: new Date(),
+            },
+            create: {
+                htsCode: result.htsCode,
+                countryCode: result.countryCode,
+                countryName: result.countryName,
+                avgUnitValue: result.avgUnitValue,
+                medianUnitValue: result.medianUnitValue,
+                minUnitValue: result.minUnitValue,
+                maxUnitValue: result.maxUnitValue,
+                stdDeviation: result.stdDeviation,
+                shipmentCount: result.shipmentCount,
+                totalQuantity: result.totalQuantity,
+                totalValue: result.totalValue,
+                confidenceScore: result.confidenceScore,
+                oldestShipment: result.oldestShipment,
+                newestShipment: result.newestShipment,
+            },
+        })
+    );
     
-    return { created, updated };
+    await prisma.$transaction(upsertOps);
+    
+    // Upsert doesn't distinguish created vs updated, but the count is still useful
+    return { created: results.length, updated: 0 };
 }
 
 /**
@@ -413,16 +406,49 @@ export async function getHtsCostData(
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/** Map ISO 3166-1 alpha-2 country codes to display names */
+const COUNTRY_NAMES: Record<string, string> = {
+    // Major Asian manufacturing
+    'CN': 'China', 'VN': 'Vietnam', 'IN': 'India', 'BD': 'Bangladesh',
+    'TH': 'Thailand', 'ID': 'Indonesia', 'JP': 'Japan', 'KR': 'South Korea',
+    'TW': 'Taiwan', 'MY': 'Malaysia', 'PH': 'Philippines', 'PK': 'Pakistan',
+    'KH': 'Cambodia', 'SG': 'Singapore', 'HK': 'Hong Kong', 'LK': 'Sri Lanka',
+    'MM': 'Myanmar', 'LA': 'Laos', 'NP': 'Nepal', 'MN': 'Mongolia',
+    // North America (USMCA)
+    'MX': 'Mexico', 'CA': 'Canada',
+    // Europe
+    'DE': 'Germany', 'IT': 'Italy', 'FR': 'France', 'ES': 'Spain',
+    'NL': 'Netherlands', 'BE': 'Belgium', 'GB': 'United Kingdom', 'PL': 'Poland',
+    'RO': 'Romania', 'IE': 'Ireland', 'SE': 'Sweden', 'CH': 'Switzerland',
+    'DK': 'Denmark', 'NO': 'Norway', 'FI': 'Finland', 'AT': 'Austria',
+    'CZ': 'Czech Republic', 'HU': 'Hungary', 'PT': 'Portugal', 'GR': 'Greece',
+    'BG': 'Bulgaria', 'SK': 'Slovakia', 'SI': 'Slovenia', 'HR': 'Croatia',
+    'LT': 'Lithuania', 'LV': 'Latvia', 'EE': 'Estonia', 'LU': 'Luxembourg',
+    'UA': 'Ukraine', 'RS': 'Serbia', 'BA': 'Bosnia and Herzegovina',
+    // Turkey
+    'TR': 'Turkey',
+    // Middle East
+    'AE': 'United Arab Emirates', 'SA': 'Saudi Arabia', 'IL': 'Israel',
+    'JO': 'Jordan', 'KW': 'Kuwait', 'QA': 'Qatar', 'BH': 'Bahrain', 'OM': 'Oman',
+    // Africa
+    'ZA': 'South Africa', 'MA': 'Morocco', 'EG': 'Egypt', 'TN': 'Tunisia',
+    'KE': 'Kenya', 'ET': 'Ethiopia', 'NG': 'Nigeria', 'GH': 'Ghana',
+    'MU': 'Mauritius', 'MG': 'Madagascar',
+    // Latin America
+    'BR': 'Brazil', 'AR': 'Argentina', 'PE': 'Peru', 'CO': 'Colombia',
+    'CL': 'Chile', 'EC': 'Ecuador', 'DO': 'Dominican Republic',
+    'HN': 'Honduras', 'GT': 'Guatemala', 'SV': 'El Salvador',
+    'NI': 'Nicaragua', 'CR': 'Costa Rica', 'PA': 'Panama',
+    'UY': 'Uruguay', 'PY': 'Paraguay', 'BO': 'Bolivia',
+    // Oceania
+    'AU': 'Australia', 'NZ': 'New Zealand',
+    // Central Asia
+    'RU': 'Russia', 'KZ': 'Kazakhstan', 'UZ': 'Uzbekistan',
+    'AZ': 'Azerbaijan', 'GE': 'Georgia',
+};
+
 function getCountryName(code: string): string {
-    const names: Record<string, string> = {
-        'CN': 'China', 'VN': 'Vietnam', 'IN': 'India', 'MX': 'Mexico',
-        'TH': 'Thailand', 'ID': 'Indonesia', 'BD': 'Bangladesh', 'TR': 'Turkey',
-        'TW': 'Taiwan', 'KR': 'South Korea', 'JP': 'Japan', 'DE': 'Germany',
-        'IT': 'Italy', 'PL': 'Poland', 'GB': 'United Kingdom', 'MY': 'Malaysia',
-        'PH': 'Philippines', 'PK': 'Pakistan', 'KH': 'Cambodia', 'EG': 'Egypt',
-        'BR': 'Brazil', 'CA': 'Canada', 'FR': 'France', 'ES': 'Spain',
-    };
-    return names[code] || code;
+    return COUNTRY_NAMES[code] || code;
 }
 
 

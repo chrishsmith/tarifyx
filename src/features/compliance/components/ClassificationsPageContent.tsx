@@ -154,18 +154,12 @@ export const ClassificationsPageContent = () => {
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
                 <div>
-                    <Title level={2} className="!mb-1">
-                        {isClassifyTab ? (
-                            <span className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">
-                                HTS Classification
-                            </span>
-                        ) : (
-                            'Classifications'
-                        )}
+                    <Title level={2} className="!mb-1 text-slate-900">
+                        {isClassifyTab ? 'HTS Classification' : 'Classifications'}
                     </Title>
                     <Text type="secondary">
                         {isClassifyTab
-                            ? 'Bringing the sexy back to logistics'
+                            ? 'Classify your product and get the full tariff breakdown'
                             : 'Classify products, view history, and manage your product library.'}
                     </Text>
                 </div>

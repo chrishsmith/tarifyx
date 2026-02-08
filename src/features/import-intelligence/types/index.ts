@@ -27,12 +27,31 @@ export interface HtsAlternative {
   dutyRate: string;
 }
 
+export interface SplitConfidence {
+  heading: number;       // 0-100: How sure we are about the 4-digit heading
+  code: number;          // 0-100: How sure we are about the specific statistical suffix
+  combined: number;      // heading × code / 100 (the effective confidence)
+  headingExplanation: string;
+  codeExplanation: string;
+}
+
+export interface HeadingPredictionSummary {
+  topHeading: string;    // 4-digit heading code
+  topChapter: string;    // 2-digit chapter
+  confidence: number;    // Confidence of top prediction
+  method: string;        // 'deterministic' | 'setfit' | 'ai'
+  constrained: boolean;  // Whether search was gated to predicted headings
+}
+
 export interface Classification {
   htsCode: string;
   description: string;
   confidence: number;
+  baseMfnRate?: number;
   alternatives: HtsAlternative[];
   path: string[];
+  splitConfidence?: SplitConfidence;
+  headingPrediction?: HeadingPredictionSummary;
 }
 
 export interface DutyLayer {
@@ -102,14 +121,39 @@ export interface LandedCost {
   dataSource?: string; // e.g., "USITC HTS API", "Tariff Registry"
 }
 
+export interface TariffBreakdownSummary {
+  baseMfn: number;
+  section301: number;
+  ieepaFentanyl: number;
+  ieepaBaseline: number;
+  ieepaReciprocal: number;
+  section232: number;
+  adcvd: number;
+  ftaDiscount: number;
+  effectiveRate: number;
+}
+
 export interface CountryOption {
   countryCode: string;
   countryName: string;
   landedCost: number;
+  landedCostPerUnit?: number;
+  productCostPerUnit?: number;
   dutyRate: number;
   savings: number;
+  savingsPercent?: number;
   ftaAvailable: boolean;
   ftaName?: string;
+  supplierCount?: number;
+  transitDays?: number;
+  confidenceScore?: number;
+  dataQuality?: 'high' | 'medium' | 'low';
+  dataSource?: 'cost_data' | 'estimate' | 'tariff_only';
+  tariffBreakdown?: TariffBreakdownSummary;
+  importVolume?: number;
+  importVolumeYear?: number;
+  costTrend?: 'rising' | 'falling' | 'stable';
+  costTrendPercent?: number;
 }
 
 export interface CountryComparison {
@@ -202,59 +246,3 @@ export interface ImportAnalysis {
   optimization: Optimization;
 }
 
-export interface BulkProduct {
-  sku: string;
-  description: string;
-  countryCode: string;
-  value: number;
-  quantity?: number;
-  htsCode?: string;
-  attributes?: Partial<ProductAttributes>;
-}
-
-export interface BulkAnalysisStatus {
-  analysisId: string;
-  status: 'processing' | 'complete' | 'failed';
-  progress: number;
-  estimatedTime?: number;
-  totalProducts: number;
-  processedProducts: number;
-  failedProducts: number;
-}
-
-export interface PortfolioSummary {
-  totalProducts: number;
-  totalValue: number;
-  totalDuty: number;
-  averageRate: number;
-  attentionRequired: number;
-  complianceAlerts: number;
-  recentChanges: number;
-}
-
-export interface PortfolioProduct {
-  sku: string;
-  product: string;
-  countryCode: string;
-  dutyRate: number;
-  status: string;
-  alert?: string;
-  analysis: ImportAnalysis;
-}
-
-export interface PortfolioAnalysis {
-  summary: PortfolioSummary;
-  dutyExposureByCountry: Array<{
-    countryCode: string;
-    countryName: string;
-    totalDuty: number;
-    percentage: number;
-  }>;
-  optimizationOpportunities: Array<{
-    type: string;
-    productCount: number;
-    savings: number;
-    description: string;
-  }>;
-  products: PortfolioProduct[];
-}

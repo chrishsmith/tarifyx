@@ -203,9 +203,35 @@ export async function classifyWithSetFit(
   }
 }
 
+/**
+ * Extract heading-level prediction from SetFit result.
+ * 
+ * Current SetFit model predicts 6-digit subheadings (~1,200 classes).
+ * For heading prediction (4-digit, ~350 classes), we extract the heading
+ * from the subheading prediction. This is accurate because heading prediction
+ * is a strictly easier task than subheading prediction.
+ * 
+ * Future: Retrain SetFit specifically for 4-digit heading prediction for
+ * higher accuracy on the easier task (~350 vs ~1,200 classes).
+ */
+export function extractHeadingPrediction(
+  result: SetFitClassificationResult
+): { heading: string; chapter: string; confidence: number } | null {
+  if (!result.predictions[0]) return null;
+  
+  const code = result.predictions[0].code;
+  return {
+    heading: code.slice(0, 4),
+    chapter: code.slice(0, 2),
+    // Heading confidence is higher than code confidence since it's a coarser prediction
+    confidence: Math.min(0.98, result.predictions[0].confidence * 1.1),
+  };
+}
+
 export default {
   SetFitClassifier,
   setfitClassifier,
   isSetFitAvailable,
   classifyWithSetFit,
+  extractHeadingPrediction,
 };

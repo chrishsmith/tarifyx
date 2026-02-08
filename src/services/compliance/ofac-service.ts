@@ -73,7 +73,7 @@ interface SyncResult {
 async function downloadFile(url: string): Promise<{ content: string; lastModified: Date | null }> {
   const response = await fetch(url, {
     headers: {
-      'User-Agent': 'Sourcify Trade Intelligence Platform',
+      'User-Agent': 'Tarifyx Import Intelligence Platform',
     },
   });
 

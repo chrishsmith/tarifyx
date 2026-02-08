@@ -16,12 +16,12 @@ export default function OnboardingPageContent() {
                     <div className="bg-teal-600 p-1.5 rounded-lg">
                         <Anchor className="w-5 h-5 text-white" />
                     </div>
-                    <span className="font-bold text-lg text-slate-800 tracking-tight">Sourcify</span>
+                    <span className="font-bold text-lg text-slate-800 tracking-tight">Tarifyx</span>
                 </div>
             </Header>
             <Content className="p-8 md:p-16 flex flex-col items-center">
                 <div className="w-full max-w-2xl mb-8 text-center">
-                    <Title level={2} style={{ color: '#18181B' }}>Welcome to Sourcify</Title>
+                    <Title level={2} style={{ color: '#18181B' }}>Welcome to Tarifyx</Title>
                 </div>
                 <OnboardingWizard />
             </Content>

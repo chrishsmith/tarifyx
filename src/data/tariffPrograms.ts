@@ -12,7 +12,7 @@
  * 4. Section 232 (Steel/Aluminum)
  * 5. AD/CVD (Manufacturer-specific, checked separately)
  * 
- * Last Updated: December 2024
+ * Last Updated: February 2026
  * Note: Tariff rates change frequently - verify with official sources
  */
 

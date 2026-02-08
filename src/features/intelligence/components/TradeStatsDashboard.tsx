@@ -15,10 +15,11 @@ import {
     DatePicker,
     Tooltip,
     message,
-    Spin,
     Alert,
     Segmented,
 } from 'antd';
+import { LoadingState } from '@/components/shared/LoadingState';
+import { ErrorState } from '@/components/shared/ErrorState';
 import {
     TrendingUp,
     TrendingDown,
@@ -158,7 +159,7 @@ const BarChartTooltip = ({ active, payload }: { active?: boolean; payload?: Arra
     if (active && payload && payload.length) {
         const data = payload[0].payload;
         return (
-            <div className="bg-white/95 backdrop-blur-sm shadow-lg rounded-lg p-3 border border-slate-200">
+            <div className="bg-white shadow-sm rounded-lg p-3 border border-slate-200">
                 <p className="font-semibold text-slate-900">{data.countryName}</p>
                 <p className="text-sm text-slate-600">
                     Value: {formatValue(payload[0].value)}
@@ -176,7 +177,7 @@ const BarChartTooltip = ({ active, payload }: { active?: boolean; payload?: Arra
 const LineChartTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ value: number; name: string; payload: { year: number } }> }) => {
     if (active && payload && payload.length) {
         return (
-            <div className="bg-white/95 backdrop-blur-sm shadow-lg rounded-lg p-3 border border-slate-200">
+            <div className="bg-white shadow-sm rounded-lg p-3 border border-slate-200">
                 <p className="font-semibold text-slate-900">{payload[0].payload.year}</p>
                 {payload.map((entry, index) => (
                     <p key={index} className="text-sm text-slate-600">
@@ -309,7 +310,7 @@ export const TradeStatsDashboard: React.FC = () => {
             <Row gutter={[16, 16]} className="mb-6">
                 {stats.map((stat, idx) => (
                     <Col xs={12} sm={12} md={6} key={idx}>
-                        <div className="bg-white/70 backdrop-blur-md border border-white/50 shadow-lg shadow-slate-200/30 rounded-2xl p-4 md:p-5 h-full relative overflow-hidden">
+                        <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4 md:p-5 h-full relative overflow-hidden">
                             <div className={`absolute -right-4 -top-4 w-16 h-16 rounded-full ${stat.bg} blur-xl`} />
                             <div className="relative z-10">
                                 <div className={`p-2 rounded-lg ${stat.bg} inline-block mb-2`}>
@@ -357,7 +358,7 @@ export const TradeStatsDashboard: React.FC = () => {
             </div>
             
             {/* Filters */}
-            <Card className="bg-white/70 backdrop-blur-md border border-white/50 shadow-lg rounded-2xl">
+            <Card className="bg-white border border-slate-200 shadow-sm rounded-xl">
                 <div className="flex flex-col md:flex-row gap-4 items-end">
                     <div className="flex-1 w-full">
                         <Text className="text-slate-600 text-sm mb-1.5 block">HTS Code</Text>
@@ -403,23 +404,15 @@ export const TradeStatsDashboard: React.FC = () => {
             
             {/* Loading State */}
             {loading && (
-                <div className="flex justify-center items-center py-20">
-                    <Spin size="large" />
-                </div>
+                <LoadingState fullHeight message="Loading trade statistics..." size="large" />
             )}
             
             {/* Error State */}
             {error && !loading && (
-                <Alert
-                    type="error"
-                    message="Failed to Load Data"
-                    description={error}
-                    showIcon
-                    action={
-                        <Button size="small" onClick={handleSearch}>
-                            Retry
-                        </Button>
-                    }
+                <ErrorState
+                    title="Failed to Load Data"
+                    message={error}
+                    onRetry={handleSearch}
                 />
             )}
             
@@ -449,7 +442,7 @@ export const TradeStatsDashboard: React.FC = () => {
                         {/* Top Import Sources - Bar Chart */}
                         <Col xs={24} lg={16}>
                             <Card 
-                                className="bg-white/70 backdrop-blur-md border border-white/50 shadow-lg rounded-2xl"
+                                className="bg-white border border-slate-200 shadow-sm rounded-xl"
                                 title={
                                     <div className="flex items-center justify-between">
                                         <span className="font-semibold">Top 10 Import Sources</span>
@@ -532,7 +525,7 @@ export const TradeStatsDashboard: React.FC = () => {
                         {/* Market Share - Pie Chart */}
                         <Col xs={24} lg={8}>
                             <Card 
-                                className="bg-white/70 backdrop-blur-md border border-white/50 shadow-lg rounded-2xl"
+                                className="bg-white border border-slate-200 shadow-sm rounded-xl"
                                 title={<span className="font-semibold">Market Share</span>}
                             >
                                 <div className="h-[350px]">
@@ -569,7 +562,7 @@ export const TradeStatsDashboard: React.FC = () => {
                     
                     {/* Growth Comparison Table */}
                     <Card 
-                        className="bg-white/70 backdrop-blur-md border border-white/50 shadow-lg rounded-2xl mt-6"
+                        className="bg-white border border-slate-200 shadow-sm rounded-xl mt-6"
                         title={<span className="font-semibold">Year-over-Year Growth by Country</span>}
                     >
                         <div className="overflow-x-auto">

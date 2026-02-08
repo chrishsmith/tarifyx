@@ -5,7 +5,7 @@ import { SupplierExplorer } from '@/features/sourcing/components/SupplierExplore
 import { Metadata } from 'next';
 
 export const metadata: Metadata = {
-    title: 'Supplier Explorer - Sourcify',
+    title: 'Supplier Explorer - Tarifyx',
     description: 'Source from 11M+ verified suppliers',
 };
 

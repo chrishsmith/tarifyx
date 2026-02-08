@@ -23,9 +23,9 @@ const TIERS = [
         name: 'Free',
         price: '$0',
         period: 'forever',
-        description: 'Perfect for trying out Sourcify and occasional lookups.',
+        description: 'Perfect for trying out Tarifyx and occasional lookups.',
         cta: 'Get Started',
-        ctaHref: '/dashboard/classifications',
+        ctaHref: '/dashboard/import/analyze',
         highlight: false,
         features: [
             { text: '5 classifications per day', included: true },
@@ -64,7 +64,7 @@ const TIERS = [
         period: '/month',
         description: 'For teams managing large catalogs with advanced needs.',
         cta: 'Contact Sales',
-        ctaHref: 'mailto:sales@sourcify.dev',
+        ctaHref: 'mailto:sales@tarifyx.dev',
         highlight: false,
         features: [
             { text: 'Everything in Pro', included: true },
@@ -157,14 +157,14 @@ export function PricingPageContent() {
     return (
         <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
             {/* Navigation */}
-            <nav className="border-b border-slate-200 bg-white/80 backdrop-blur-sm sticky top-0 z-50">
+            <nav className="border-b border-slate-200 bg-white sticky top-0 z-50">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex justify-between items-center h-16">
                         <Link href="/" className="flex items-center gap-3">
                             <div className="bg-teal-600 p-2 rounded-lg">
                                 <Anchor className="w-5 h-5 text-white" />
                             </div>
-                            <span className="font-semibold text-lg text-slate-900">Sourcify</span>
+                            <span className="font-semibold text-lg text-slate-900">Tarifyx</span>
                         </Link>
                         <div className="flex items-center gap-4">
                             <Link 
@@ -174,7 +174,7 @@ export function PricingPageContent() {
                                 Sign In
                             </Link>
                             <Link 
-                                href="/dashboard/classifications" 
+                                href="/login?mode=signup" 
                                 className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
                             >
                                 Get Started Free
@@ -242,8 +242,8 @@ export function PricingPageContent() {
                                     key={tier.name}
                                     className={`relative rounded-2xl p-8 ${
                                         tier.highlight
-                                            ? 'bg-gradient-to-b from-teal-600 to-teal-700 text-white shadow-xl shadow-teal-200/50 scale-105 z-10'
-                                            : 'bg-white border border-slate-200 shadow-lg shadow-slate-200/50'
+                                            ? 'bg-gradient-to-b from-teal-600 to-teal-700 text-white shadow-sm scale-105 z-10'
+                                            : 'bg-white border border-slate-200 shadow-sm'
                                     }`}
                                 >
                                     {tier.badge && (
@@ -327,7 +327,7 @@ export function PricingPageContent() {
                         Compare plans in detail
                     </h2>
                     
-                    <div className="bg-white rounded-2xl shadow-lg shadow-slate-200/50 overflow-hidden">
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                         {/* Header */}
                         <div className="grid grid-cols-4 border-b border-slate-200 bg-slate-50">
                             <div className="p-4 font-medium text-slate-600">Features</div>
@@ -419,14 +419,14 @@ export function PricingPageContent() {
                     </p>
                     <div className="flex flex-col sm:flex-row gap-4 justify-center">
                         <Link
-                            href="/dashboard/classifications"
+                            href="/login?mode=signup"
                             className="inline-flex items-center justify-center gap-2 bg-white text-teal-700 px-8 py-3 rounded-lg font-semibold hover:bg-teal-50 transition-colors"
                         >
                             <Sparkles size={20} />
                             Get Started Free
                         </Link>
                         <Link
-                            href="mailto:sales@sourcify.dev"
+                            href="mailto:sales@tarifyx.dev"
                             className="inline-flex items-center justify-center gap-2 bg-teal-500/20 text-white border border-teal-400/50 px-8 py-3 rounded-lg font-semibold hover:bg-teal-500/30 transition-colors"
                         >
                             Talk to Sales
@@ -442,10 +442,10 @@ export function PricingPageContent() {
                     <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                         <div className="flex items-center gap-2">
                             <Anchor size={20} className="text-teal-600" />
-                            <span className="font-medium text-slate-900">Sourcify</span>
+                            <span className="font-medium text-slate-900">Tarifyx</span>
                         </div>
                         <p className="text-sm text-slate-500">
-                            © 2026 Sourcify. All rights reserved.
+                            © 2026 Tarifyx. All rights reserved.
                         </p>
                     </div>
                 </div>

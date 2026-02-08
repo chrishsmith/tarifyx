@@ -156,6 +156,12 @@ export async function POST(request: NextRequest) {
       // AI Reasoning - explains WHY the classification was chosen
       aiReasoning: result.aiReasoning,
       
+      // Split confidence (heading × code)
+      splitConfidence: result.splitConfidence,
+      
+      // Heading prediction info
+      headingPrediction: result.headingPrediction,
+      
       // Clarification needed (low confidence)
       needsClarification: result.needsClarification,
       

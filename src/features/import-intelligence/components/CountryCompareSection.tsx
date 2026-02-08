@@ -1,90 +1,409 @@
 'use client';
 
-import React from 'react';
-import { Table, Tag, Button, Typography, Space, Alert } from 'antd';
-import type { CountryComparison } from '../types';
+import React, { useState, useRef } from 'react';
+import { Table, Tag, Button, Typography, Space, Alert, Tooltip } from 'antd';
+import { useRouter } from 'next/navigation';
+import { ChevronDown, ChevronUp, Info, TrendingDown, TrendingUp, Minus, BarChart3 } from 'lucide-react';
+import type { CountryComparison, CountryOption, TariffBreakdownSummary } from '../types';
 
 const { Text, Title } = Typography;
 
+const INITIAL_VISIBLE = 5;
+const ACTION_DEBOUNCE_MS = 300;
+
+/** Assumed annual order multiplier for savings projection */
+const ANNUAL_ORDERS_ESTIMATE = 12;
+
+/** Format dollar amounts */
+const formatCurrency = (amount: number) =>
+  `$${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Format compact dollar amounts (no decimals for large values) */
+const formatCompact = (amount: number) => {
+  if (amount >= 1_000_000_000) return `$${(amount / 1_000_000_000).toFixed(1)}B`;
+  if (amount >= 1_000_000) return `$${(amount / 1_000_000).toFixed(1)}M`;
+  if (amount >= 1_000) return `$${(amount / 1_000).toFixed(1)}K`;
+  return formatCurrency(amount);
+};
+
+/** Color for tariff program tags */
+const TARIFF_COLORS: Record<string, string> = {
+  baseMfn: 'blue',
+  section301: 'orange',
+  ieepa: 'red',
+  section232: 'cyan',
+  adcvd: 'gold',
+  fta: 'green',
+};
+
+/** Render a mini tariff breakdown as inline tags */
+const TariffBreakdownTags: React.FC<{ breakdown: TariffBreakdownSummary }> = ({ breakdown }) => {
+  const parts: Array<{ label: string; rate: number; color: string }> = [];
+  if (breakdown.baseMfn > 0) parts.push({ label: 'MFN', rate: breakdown.baseMfn, color: TARIFF_COLORS.baseMfn });
+  if (breakdown.section301 > 0) parts.push({ label: '301', rate: breakdown.section301, color: TARIFF_COLORS.section301 });
+  const totalIeepa = breakdown.ieepaFentanyl + breakdown.ieepaBaseline + breakdown.ieepaReciprocal;
+  if (totalIeepa > 0) parts.push({ label: 'IEEPA', rate: totalIeepa, color: TARIFF_COLORS.ieepa });
+  if (breakdown.section232 > 0) parts.push({ label: '232', rate: breakdown.section232, color: TARIFF_COLORS.section232 });
+  if (breakdown.adcvd > 0) parts.push({ label: 'AD/CVD', rate: breakdown.adcvd, color: TARIFF_COLORS.adcvd });
+  if (breakdown.ftaDiscount > 0) parts.push({ label: 'FTA', rate: -breakdown.ftaDiscount, color: TARIFF_COLORS.fta });
+
+  if (parts.length === 0) return <Text className="text-slate-400 text-xs">No additional tariffs</Text>;
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {parts.map(p => (
+        <Tag key={p.label} color={p.color} className="text-xs !m-0">
+          {p.label} {p.rate > 0 ? '+' : ''}{p.rate}%
+        </Tag>
+      ))}
+    </div>
+  );
+};
+
+/** Cost trend indicator */
+const CostTrendBadge: React.FC<{ trend?: string; percent?: number }> = ({ trend, percent }) => {
+  if (!trend || percent === undefined) return null;
+  if (trend === 'rising') {
+    return (
+      <Tooltip title={`Avg import cost rose ${percent}% year-over-year`}>
+        <span className="inline-flex items-center gap-0.5 text-xs text-red-600">
+          <TrendingUp size={12} /> +{percent}%
+        </span>
+      </Tooltip>
+    );
+  }
+  if (trend === 'falling') {
+    return (
+      <Tooltip title={`Avg import cost fell ${Math.abs(percent)}% year-over-year`}>
+        <span className="inline-flex items-center gap-0.5 text-xs text-green-600">
+          <TrendingDown size={12} /> {percent}%
+        </span>
+      </Tooltip>
+    );
+  }
+  return (
+    <Tooltip title="Avg import cost is stable year-over-year">
+      <span className="inline-flex items-center gap-0.5 text-xs text-slate-500">
+        <Minus size={12} /> stable
+      </span>
+    </Tooltip>
+  );
+};
+
+/** Data quality badge */
+const DataQualityBadge: React.FC<{ quality?: string; source?: string }> = ({ quality, source }) => {
+  if (source === 'tariff_only') {
+    return (
+      <Tooltip title="Tariff comparison only — product cost is estimated from your input value. Real manufacturing costs may vary by country.">
+        <Tag className="text-xs !m-0" color="default">Tariff Est.</Tag>
+      </Tooltip>
+    );
+  }
+  if (quality === 'high') return <Tag className="text-xs !m-0" color="green">High Conf.</Tag>;
+  if (quality === 'medium') return <Tag className="text-xs !m-0" color="gold">Med Conf.</Tag>;
+  return <Tag className="text-xs !m-0" color="default">Low Conf.</Tag>;
+};
+
 interface CountryCompareSectionProps {
   comparison: CountryComparison;
+  htsCode?: string;
+  /** Quantity from the user input — used for annual savings projection */
+  quantity?: number;
 }
 
-export const CountryCompareSection: React.FC<CountryCompareSectionProps> = ({ comparison }) => {
+export const CountryCompareSection: React.FC<CountryCompareSectionProps> = ({ comparison, htsCode, quantity }) => {
+  const router = useRouter();
+  const lastActionRef = useRef(0);
+  const [showAll, setShowAll] = useState(false);
+
+  const currentCountryCode = comparison.current.countryCode;
+  const currentLandedCost = comparison.current.landedCost;
+
+  const handleNavigate = (path: string) => {
+    try {
+      const now = Date.now();
+      if (now - lastActionRef.current < ACTION_DEBOUNCE_MS) return;
+      lastActionRef.current = now;
+      router.push(path);
+    } catch (error) {
+      console.error(`[CountryCompareSection] ${new Date().toISOString()} Navigation error:`, error);
+    }
+  };
+
+  const bestAlternative = comparison.alternatives.reduce((best, next) => {
+    if (!best) return next;
+    return next.savings > best.savings ? next : best;
+  }, null as (CountryOption | null));
+
+  // Combine current + alternatives into one list for the table
+  const allCountries = [comparison.current, ...comparison.alternatives];
+  const visibleCountries = showAll ? allCountries : allCountries.slice(0, INITIAL_VISIBLE + 1); // +1 for current
+  const hiddenCount = allCountries.length - visibleCountries.length;
+
+  // Check if we have any cost_data vs all tariff_only
+  const hasCostData = allCountries.some(c => c.dataSource === 'cost_data');
+  const allTariffOnly = !hasCostData && allCountries.every(c => c.dataSource === 'tariff_only' || c.dataSource === 'estimate');
+  const hasImportVolume = allCountries.some(c => c.importVolume && c.importVolume > 0);
+  const hasCostTrend = allCountries.some(c => c.costTrend !== undefined);
+
+  // Annual savings projection
+  const annualSavings = bestAlternative && bestAlternative.savings > 0 && quantity
+    ? bestAlternative.savings * ANNUAL_ORDERS_ESTIMATE
+    : undefined;
+
   const columns = [
     {
       title: 'Country',
       dataIndex: 'countryName',
       key: 'country',
-      render: (text: string, record: any) => (
-        <span className="font-medium">{text}</span>
+      width: 200,
+      fixed: 'left' as const,
+      render: (text: string, record: CountryOption) => (
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-slate-900">{text}</span>
+            {record.countryCode === currentCountryCode && (
+              <Tag color="cyan" className="!m-0">Current</Tag>
+            )}
+            {bestAlternative && record.countryCode === bestAlternative.countryCode && record.savings > 0 && (
+              <Tag color="green" className="!m-0">Best</Tag>
+            )}
+          </div>
+          <div className="flex items-center gap-2 mt-1">
+            <DataQualityBadge quality={record.dataQuality} source={record.dataSource} />
+            {record.ftaAvailable && (
+              <Tag color="green" className="text-xs !m-0">
+                {record.ftaName || 'FTA'}
+              </Tag>
+            )}
+          </div>
+        </div>
       ),
     },
     {
-      title: 'Landed Cost',
-      dataIndex: 'landedCost',
-      key: 'landedCost',
-      render: (value: number) => `$${value.toLocaleString('en-US')}`,
-      sorter: (a: any, b: any) => a.landedCost - b.landedCost,
+      title: (
+        <Tooltip title="Average import cost per statistical unit from USITC customs data (real declared values). Unit type varies by HTS code (e.g. dozens for apparel, kg for bulk goods). Independent of your input.">
+          <span className="cursor-help">Avg. Import Cost</span>
+        </Tooltip>
+      ),
+      dataIndex: 'productCostPerUnit',
+      key: 'productCost',
+      width: 140,
+      render: (value: number | undefined, record: CountryOption) => (
+        <div>
+          {value !== undefined && value > 0 ? (
+            <>
+              <Text className="text-slate-700">{formatCurrency(value)}/unit</Text>
+              {record.dataSource === 'estimate' && (
+                <Text className="text-xs text-slate-400 block">global avg</Text>
+              )}
+            </>
+          ) : (
+            <Tooltip title="No USITC import data available for this product from this country">
+              <Text className="text-slate-400">No data</Text>
+            </Tooltip>
+          )}
+          {record.costTrend && (
+            <div className="mt-0.5">
+              <CostTrendBadge trend={record.costTrend} percent={record.costTrendPercent} />
+            </div>
+          )}
+        </div>
+      ),
+      sorter: (a: CountryOption, b: CountryOption) => (a.productCostPerUnit ?? 0) - (b.productCostPerUnit ?? 0),
     },
     {
-      title: 'Duty Rate',
+      title: (
+        <Tooltip title="Total effective tariff rate including all programs (MFN + Section 301 + IEEPA + Section 232 + AD/CVD - FTA discount)">
+          <span className="cursor-help">Effective Tariff</span>
+        </Tooltip>
+      ),
       dataIndex: 'dutyRate',
       key: 'dutyRate',
-      render: (value: number) => `${value}%`,
-      sorter: (a: any, b: any) => a.dutyRate - b.dutyRate,
+      width: 120,
+      render: (value: number, record: CountryOption) => (
+        <div>
+          <Text className="font-semibold text-slate-900">{value.toFixed(1)}%</Text>
+          {record.tariffBreakdown && (
+            <div className="mt-1">
+              <TariffBreakdownTags breakdown={record.tariffBreakdown} />
+            </div>
+          )}
+        </div>
+      ),
+      sorter: (a: CountryOption, b: CountryOption) => a.dutyRate - b.dutyRate,
+    },
+    {
+      title: (
+        <Tooltip title="Total cost including product, tariffs, shipping, and fees for the full quantity">
+          <span className="cursor-help">Total Landed Cost</span>
+        </Tooltip>
+      ),
+      dataIndex: 'landedCost',
+      key: 'landedCost',
+      width: 150,
+      render: (value: number, record: CountryOption) => (
+        <div>
+          <Text className="font-semibold text-slate-900">{formatCompact(value)}</Text>
+          {record.landedCostPerUnit && (
+            <div>
+              <Text className="text-xs text-slate-500">
+                {formatCurrency(record.landedCostPerUnit)}/unit
+              </Text>
+            </div>
+          )}
+        </div>
+      ),
+      sorter: (a: CountryOption, b: CountryOption) => a.landedCost - b.landedCost,
+      defaultSortOrder: 'ascend' as const,
     },
     {
       title: 'Savings',
-      dataIndex: 'savings',
       key: 'savings',
-      render: (value: number) => (
-        <Text strong className={value > 0 ? 'text-green-600' : ''}>
-          {value > 0 ? `$${value.toLocaleString('en-US')}` : '—'}
+      width: 140,
+      render: (_: unknown, record: CountryOption) => {
+        if (record.countryCode === currentCountryCode) {
+          return <Text className="text-slate-400">Baseline</Text>;
+        }
+        if (record.savings <= 0) {
+          return <Text className="text-slate-400">—</Text>;
+        }
+        const percent = record.savingsPercent ?? (currentLandedCost > 0 ? Math.round((record.savings / currentLandedCost) * 100) : 0);
+        return (
+          <div>
+            <div className="flex items-center gap-1">
+              <TrendingDown size={14} className="text-green-600" />
+              <Text className="font-semibold text-green-600">
+                {formatCompact(record.savings)}
+              </Text>
+            </div>
+            {percent > 0 && (
+              <Text className="text-xs text-green-600">{percent}% less</Text>
+            )}
+          </div>
+        );
+      },
+      sorter: (a: CountryOption, b: CountryOption) => b.savings - a.savings,
+    },
+    // Conditionally show import volume column when data exists
+    ...(hasImportVolume ? [{
+      title: (
+        <Tooltip title="Total US import value for this HTS code from this country (USITC DataWeb). Higher volume = more established supply chain.">
+          <span className="cursor-help">Import Volume</span>
+        </Tooltip>
+      ),
+      dataIndex: 'importVolume',
+      key: 'importVolume',
+      width: 120,
+      render: (value: number | undefined) => (
+        <Text className="text-slate-600">
+          {value && value > 0 ? formatCompact(value) : '—'}
         </Text>
       ),
-      sorter: (a: any, b: any) => b.savings - a.savings,
-    },
+      sorter: (a: CountryOption, b: CountryOption) => (a.importVolume ?? 0) - (b.importVolume ?? 0),
+    }] : []),
     {
-      title: 'FTA',
-      dataIndex: 'ftaAvailable',
-      key: 'fta',
-      render: (available: boolean, record: any) =>
-        available ? (
-          <Tag color="green">{record.ftaName || 'Yes'}</Tag>
-        ) : (
-          <Tag>No</Tag>
-        ),
+      title: 'Transit',
+      dataIndex: 'transitDays',
+      key: 'transit',
+      width: 80,
+      render: (days: number | undefined) => (
+        <Text className="text-slate-600">{days !== undefined ? `${days}d` : '—'}</Text>
+      ),
+      sorter: (a: CountryOption, b: CountryOption) => (a.transitDays ?? 99) - (b.transitDays ?? 99),
     },
   ];
 
-  const dataSource = [comparison.current, ...comparison.alternatives].map((item, index) => ({
-    key: index,
+  const dataSource = visibleCountries.map((item, index) => ({
+    key: `${item.countryCode}-${index}`,
     ...item,
   }));
 
+  const hasContext = Boolean(htsCode);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4" data-component="country_compare_section">
+      {/* Annual savings callout — only if there's a real savings opportunity */}
+      {bestAlternative && bestAlternative.savings > 0 && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center justify-between">
+          <div>
+            <Text className="text-sm text-green-800 font-medium block">
+              Potential savings with {bestAlternative.countryName}
+            </Text>
+            <Text className="text-xs text-green-600 block mt-0.5">
+              vs. {comparison.current.countryName} ({bestAlternative.savingsPercent ?? 0}% lower landed cost)
+            </Text>
+          </div>
+          <div className="text-right">
+            <Text className="text-2xl font-bold text-green-700 block">
+              {formatCompact(bestAlternative.savings)}
+            </Text>
+            <Text className="text-xs text-green-600">per order</Text>
+            {annualSavings !== undefined && annualSavings > 0 && (
+              <Text className="text-xs text-green-600 block">
+                ~{formatCompact(annualSavings)}/yr est.
+              </Text>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Data source notice */}
+      {allTariffOnly && (
+        <Alert
+          type="info"
+          showIcon
+          icon={<Info size={16} />}
+          message="Tariff-based comparison"
+          description="No real import cost data is available for this product. Costs below use your input value as the product cost basis — actual manufacturing costs vary by country. Tariff rates are accurate."
+          className="border-teal-200 bg-teal-50"
+        />
+      )}
+
+      {/* Table */}
       <div>
-        <Title level={5} className="!mb-3">
-          Sourcing Alternatives
-        </Title>
+        <div className="flex items-center justify-between mb-3">
+          <Title level={5} className="!mb-0">
+            Sourcing Alternatives
+          </Title>
+          <Text className="text-xs text-slate-500">
+            {allCountries.length} {allCountries.length === 1 ? 'country' : 'countries'} compared
+          </Text>
+        </div>
         <Table
           columns={columns}
           dataSource={dataSource}
           pagination={false}
-          size="middle"
+          size="small"
+          scroll={{ x: hasImportVolume ? 950 : 830 }}
           rowClassName={(record) =>
-            record.countryCode === comparison.current.countryCode
-              ? 'bg-blue-50'
+            record.countryCode === currentCountryCode
+              ? 'bg-teal-50'
               : ''
           }
         />
       </div>
 
+      {/* Show more / show less */}
+      {comparison.alternatives.length > INITIAL_VISIBLE && (
+        <div className="text-center">
+          <Button
+            type="link"
+            onClick={() => setShowAll(!showAll)}
+            icon={showAll ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          >
+            {showAll
+              ? 'Show fewer countries'
+              : `Show ${hiddenCount} more ${hiddenCount === 1 ? 'country' : 'countries'}`
+            }
+          </Button>
+        </div>
+      )}
+
+      {/* Recommendation */}
       {comparison.recommendation && (
         <Alert
-          message="💡 Recommendation"
+          message="Recommendation"
           description={comparison.recommendation}
           type="info"
           showIcon={false}
@@ -92,10 +411,24 @@ export const CountryCompareSection: React.FC<CountryCompareSectionProps> = ({ co
         />
       )}
 
+      {/* Actions */}
       <Space>
-        <Button type="primary">Full comparison</Button>
-        <Button>Find suppliers</Button>
-        <Button>Check FTA qualification</Button>
+        <Button
+          type="primary"
+          disabled={!hasContext}
+          onClick={() => handleNavigate(`/dashboard/sourcing?hts=${htsCode}&from=${currentCountryCode}`)}
+        >
+          Full comparison
+        </Button>
+        <Button
+          disabled={!hasContext}
+          onClick={() => handleNavigate(`/dashboard/sourcing?tab=suppliers&hts=${htsCode}&from=${currentCountryCode}`)}
+        >
+          Find suppliers
+        </Button>
+        <Button onClick={() => handleNavigate('/dashboard/compliance/fta-calculator')}>
+          Check FTA qualification
+        </Button>
       </Space>
     </div>
   );

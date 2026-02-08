@@ -12,10 +12,11 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getEffectiveTariff, convertToLegacyFormat } from '@/services/tariff/registry';
 
-// MPF: 0.3464% of value, min $31.67, max $614.35
+// MPF: 0.3464% of value, min $33.58, max $651.50
+// Updated for FY2026 (effective Oct 1, 2025) per CBP Dec 25-10
 const MPF_RATE = 0.003464;
-const MPF_MIN = 31.67;
-const MPF_MAX = 614.35;
+const MPF_MIN = 33.58;
+const MPF_MAX = 651.50;
 
 // HMF: 0.125% of value (ocean shipments only)
 const HMF_RATE = 0.00125;

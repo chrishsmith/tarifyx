@@ -41,7 +41,7 @@ export const TariffExplanationDrawer: React.FC<TariffExplanationDrawerProps> = (
     <Drawer
       title={
         <div className="flex items-center gap-2">
-          <Info size={20} className="text-indigo-600" />
+          <Info size={20} className="text-teal-600" />
           <Text className="text-lg font-semibold">How Your Tariff Rate is Calculated</Text>
         </div>
       }
@@ -55,7 +55,7 @@ export const TariffExplanationDrawer: React.FC<TariffExplanationDrawerProps> = (
         <div className="bg-slate-50 rounded-lg p-4">
           <div className="flex items-center justify-between mb-2">
             <Text className="text-sm font-medium text-slate-600">Effective Tariff Rate</Text>
-            <Title level={3} className="m-0 text-indigo-600">
+            <Title level={3} className="m-0 text-teal-600">
               {formatRate(landedCost.duties.effectiveRate)}
             </Title>
           </div>
@@ -94,7 +94,7 @@ export const TariffExplanationDrawer: React.FC<TariffExplanationDrawerProps> = (
           <div className="pt-4 border-t-2 border-slate-200">
             <div className="flex items-center justify-between">
               <Text className="font-semibold text-slate-900">Effective Rate</Text>
-              <Text className="text-xl font-bold text-indigo-600">
+              <Text className="text-xl font-bold text-teal-600">
                 {formatRate(landedCost.duties.effectiveRate)}
               </Text>
             </div>

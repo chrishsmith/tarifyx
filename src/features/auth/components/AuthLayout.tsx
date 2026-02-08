@@ -16,7 +16,7 @@ interface AuthLayoutProps {
 export const AuthLayout: React.FC<AuthLayoutProps> = ({ children, title, subtitle }) => {
     return (
         <Layout className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-            <Content className="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl shadow-slate-200 border border-slate-100">
+            <Content className="w-full max-w-md bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
                 <div className="flex flex-col items-center mb-8 text-center">
                     <div className="bg-teal-600 p-3 rounded-xl shadow-lg shadow-teal-600/20 mb-4">
                         <Anchor className="w-8 h-8 text-white" />
@@ -32,7 +32,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ children, title, subtitl
             </Content>
             <div className="fixed bottom-4 text-center">
                 <Text type="secondary" className="text-xs">
-                    © 2026 Sourcify Inc. Secure Enterprise Login.
+                    © 2026 Tarifyx Inc. Secure Enterprise Login.
                 </Text>
             </div>
         </Layout>

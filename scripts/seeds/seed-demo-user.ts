@@ -17,7 +17,7 @@ const prisma = new PrismaClient();
 
 const DEMO_USER = {
     id: 'demo-user-001',
-    email: 'demo@sourcify.dev',
+    email: 'demo@tarifyx.dev',
     name: 'John Doe',
     password: 'demo123',  // Will be hashed
 };

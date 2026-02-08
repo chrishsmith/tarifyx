@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { randomBytes } from 'crypto';
 
-const DEMO_USER_EMAIL = 'demo@sourcify.dev';
+const DEMO_USER_EMAIL = 'demo@tarifyx.dev';
 const SESSION_DURATION_DAYS = 30;
 
 export async function GET(request: NextRequest) {

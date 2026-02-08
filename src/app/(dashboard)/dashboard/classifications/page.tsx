@@ -3,7 +3,7 @@ import { Metadata } from 'next';
 import { ClassificationsPageContent } from '@/features/compliance/components/ClassificationsPageContent';
 
 export const metadata: Metadata = {
-    title: 'Classifications - Sourcify',
+    title: 'Classifications - Tarifyx',
     description: 'Manage your HTS and Schedule B classifications',
 };
 
