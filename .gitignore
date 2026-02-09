@@ -43,3 +43,11 @@ data/
 
 # Ralph config (may contain API key)
 .cursor/ralph-config.json
+
+# Python / ML (never commit — too large for git)
+/venv/
+/models/
+.cache/
+*.pt
+*.safetensors
+*.pkl
