@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { Table, Tag, Button, Typography, Space, Alert, Tooltip } from 'antd';
+import { Table, Tag, Button, Typography, Alert, Tooltip } from 'antd';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, ChevronUp, Info, TrendingDown, TrendingUp, Minus, BarChart3 } from 'lucide-react';
 import type { CountryComparison, CountryOption, TariffBreakdownSummary } from '../types';
@@ -400,36 +400,83 @@ export const CountryCompareSection: React.FC<CountryCompareSectionProps> = ({ co
         </div>
       )}
 
-      {/* Recommendation */}
-      {comparison.recommendation && (
-        <Alert
-          message="Recommendation"
-          description={comparison.recommendation}
-          type="info"
-          showIcon={false}
-          className="border-teal-200 bg-teal-50"
-        />
-      )}
+      {/* Next Steps Footer */}
+      {(comparison.recommendation || hasContext) && (
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+          {/* Recommendation banner — only when there's a meaningful rec */}
+          {comparison.recommendation && bestAlternative && bestAlternative.savings > 0 && (
+            <div className="px-5 py-4 bg-teal-50 border-b border-teal-100">
+              <Text className="text-sm text-teal-800">{comparison.recommendation}</Text>
+            </div>
+          )}
 
-      {/* Actions */}
-      <Space>
-        <Button
-          type="primary"
-          disabled={!hasContext}
-          onClick={() => handleNavigate(`/dashboard/sourcing?hts=${htsCode}&from=${currentCountryCode}`)}
-        >
-          Full comparison
-        </Button>
-        <Button
-          disabled={!hasContext}
-          onClick={() => handleNavigate(`/dashboard/sourcing?tab=suppliers&hts=${htsCode}&from=${currentCountryCode}`)}
-        >
-          Find suppliers
-        </Button>
-        <Button onClick={() => handleNavigate('/dashboard/compliance/fta-calculator')}>
-          Check FTA qualification
-        </Button>
-      </Space>
+          {/* Action grid */}
+          <div className="p-5">
+            <Text className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3 block">
+              Next Steps
+            </Text>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Primary: Deep dive into sourcing comparison */}
+              <button
+                disabled={!hasContext}
+                onClick={() => handleNavigate(`/dashboard/sourcing?hts=${htsCode}&from=${currentCountryCode}`)}
+                className="group text-left p-4 rounded-lg border border-slate-200 hover:border-teal-300 hover:bg-teal-50/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <div className="flex items-center gap-2 mb-1.5">
+                  <BarChart3 size={16} className="text-teal-600 shrink-0" />
+                  <Text className="text-sm font-medium text-slate-900">Full comparison</Text>
+                </div>
+                <Text className="text-xs text-slate-500 leading-relaxed">
+                  Detailed cost breakdown across all sourcing countries
+                </Text>
+              </button>
+
+              {/* Secondary: Find suppliers */}
+              <button
+                disabled={!hasContext}
+                onClick={() => handleNavigate(
+                  bestAlternative && bestAlternative.savings > 0
+                    ? `/dashboard/sourcing?tab=suppliers&hts=${htsCode}&from=${bestAlternative.countryCode}`
+                    : `/dashboard/sourcing?tab=suppliers&hts=${htsCode}&from=${currentCountryCode}`
+                )}
+                className="group text-left p-4 rounded-lg border border-slate-200 hover:border-teal-300 hover:bg-teal-50/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <div className="flex items-center gap-2 mb-1.5">
+                  <TrendingDown size={16} className="text-teal-600 shrink-0" />
+                  <Text className="text-sm font-medium text-slate-900">Find suppliers</Text>
+                </div>
+                <Text className="text-xs text-slate-500 leading-relaxed">
+                  {bestAlternative && bestAlternative.savings > 0
+                    ? `Discover suppliers in ${bestAlternative.countryName}`
+                    : 'Browse verified suppliers by country'
+                  }
+                </Text>
+              </button>
+
+              {/* Tertiary: FTA check */}
+              <button
+                onClick={() => handleNavigate(
+                  htsCode
+                    ? `/dashboard/compliance/fta-calculator?hts=${htsCode}`
+                    : '/dashboard/compliance/fta-calculator'
+                )}
+                className="group text-left p-4 rounded-lg border border-slate-200 hover:border-teal-300 hover:bg-teal-50/50 transition-colors"
+              >
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Tag color="green" className="!m-0 !text-xs">FTA</Tag>
+                  <Text className="text-sm font-medium text-slate-900">Check FTA qualification</Text>
+                </div>
+                <Text className="text-xs text-slate-500 leading-relaxed">
+                  {comparison.alternatives.some(c => c.ftaAvailable)
+                    ? 'Free trade agreements may reduce your duties'
+                    : 'See if your product qualifies for duty reduction'
+                  }
+                </Text>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

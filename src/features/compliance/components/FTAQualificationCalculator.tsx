@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
     Card,
     Input,
@@ -232,8 +233,9 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const FTAQualificationCalculator: React.FC = () => {
-    // Form state
-    const [productHtsCode, setProductHtsCode] = useState('');
+    const searchParams = useSearchParams();
+    // Form state — pre-fill HTS code from URL params when navigating from Import Intelligence
+    const [productHtsCode, setProductHtsCode] = useState(searchParams.get('htsCode') || '');
     const [ftaCode, setFtaCode] = useState<string | undefined>();
     const [transactionValue, setTransactionValue] = useState<number | null>(null);
     

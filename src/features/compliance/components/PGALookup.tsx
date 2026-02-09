@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { 
     Card, 
     Input, 
@@ -104,7 +105,8 @@ interface APIResponse {
 }
 
 export const PGALookup: React.FC = () => {
-    const [htsCode, setHtsCode] = useState('');
+    const searchParams = useSearchParams();
+    const [htsCode, setHtsCode] = useState(searchParams.get('htsCode') || '');
     const [selectedAgency, setSelectedAgency] = useState<string | undefined>();
     const [searchTerm, setSearchTerm] = useState('');
     const [loading, setLoading] = useState(true);

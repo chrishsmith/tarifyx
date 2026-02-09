@@ -164,19 +164,73 @@ export interface CountryComparison {
 
 export type ComplianceAlertLevel = 'high' | 'medium' | 'low';
 
+export type ComplianceCategory = 
+  | 'pga'           // Partner Government Agency requirements
+  | 'adcvd'         // Antidumping / Countervailing Duties
+  | 'tariff_program' // Section 301, 232, IEEPA warnings
+  | 'forced_labor'  // UFLPA / forced labor risk
+  | 'sanctions'     // Sanctioned/embargoed country
+  | 'fta'           // FTA qualification requirements
+  | 'general';      // General compliance
+
 export interface ComplianceAlert {
   level: ComplianceAlertLevel;
+  category: ComplianceCategory;
   title: string;
   description: string;
   requiredActions?: string[];
   risk?: string;
   learnMoreUrl?: string;
+  /** Financial exposure estimate (e.g., AD/CVD duty range) */
+  financialExposure?: string;
+}
+
+/** PGA agency requirement surfaced from classification */
+export interface PGARequirement {
+  agencyCode: string;
+  agencyName: string;
+  flags: Array<{
+    code: string;
+    name: string;
+    description: string;
+    requirements: string[];
+  }>;
+  website: string;
+}
+
+/** AD/CVD order warning surfaced from classification */
+export interface ADCVDWarning {
+  productCategory: string;
+  affectedCountries: string[];
+  isCountryAffected: boolean;
+  dutyRange?: string;
+  orderCount: number;
+  lookupUrl: string;
+}
+
+export interface CompliancePassedCheck {
+  category: ComplianceCategory;
+  label: string;
+  detail?: string;
 }
 
 export interface Compliance {
   alerts: ComplianceAlert[];
-  passedChecks: string[];
+  passedChecks: CompliancePassedCheck[];
   riskLevel: 'low' | 'medium' | 'high';
+  /** Overall risk score 0-100 (higher = more risk) */
+  riskScore: number;
+  /** PGA agencies with requirements for this HTS code */
+  pgaRequirements: PGARequirement[];
+  /** AD/CVD order warning if applicable */
+  adcvdWarning?: ADCVDWarning;
+  /** Deep-dive tool links */
+  toolLinks: {
+    deniedPartySearch: string;
+    adcvdLookup: string;
+    pgaLookup: string;
+    ftaCalculator: string;
+  };
 }
 
 export type DocumentCriticality = 'critical' | 'required' | 'recommended';
@@ -217,19 +271,44 @@ export interface Documentation {
   dangerousGoods?: DangerousGoodsRequirements;
 }
 
+export type OptimizationType =
+  | 'country_switch'
+  | 'fta_qualification'
+  | 'classification_review'
+  | 'tariff_engineering'
+  | 'section_232_exclusion'
+  | 'duty_drawback'
+  | 'adcvd_mitigation'
+  | 'high_tariff_alert';
+
+export type OptimizationDifficulty = 'easy' | 'medium' | 'hard';
+export type OptimizationPriority = 'high' | 'medium' | 'low';
+
 export interface OptimizationOpportunity {
   id: string;
   title: string;
-  type: 'country_switch' | 'fta_qualification' | 'classification_review';
+  type: OptimizationType;
   savings: number;
+  /** Savings as percentage of current landed cost */
+  savingsPercent?: number;
   description: string;
   tradeoffs?: string[];
   requirements?: string[];
+  /** Button label for primary CTA (e.g., "Compare Countries", "Open FTA Calculator") */
+  actionLabel?: string;
+  /** Internal route for primary CTA */
   actionUrl?: string;
+  /** Difficulty of implementing this optimization */
+  difficulty?: OptimizationDifficulty;
+  /** Priority ranking — affects sort order */
+  priority?: OptimizationPriority;
+  /** Which collapse section this relates to (for scroll-to-section) */
+  relatedSection?: string;
 }
 
 export interface Optimization {
   opportunities: OptimizationOpportunity[];
+  /** De-duplicated total savings (accounts for overlapping opportunities) */
   totalPotentialSavings: number;
   topRecommendation: string;
 }

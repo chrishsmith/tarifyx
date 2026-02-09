@@ -4,24 +4,12 @@ import React, { useState } from 'react';
 import { Button, Collapse } from 'antd';
 import { Copy, Check, HelpCircle, FileText, AlertTriangle, Scale, Target, Hash } from 'lucide-react';
 import type { ImportAnalysis } from '../types';
+import { formatHtsCode } from '@/utils/htsFormatting';
 
 interface ClassificationSectionProps {
   classification: ImportAnalysis['classification'];
   searchQuery?: string;
 }
-
-// Format HTS code with periods (e.g., 6912004400 -> 6912.00.44.00)
-const formatHtsCode = (code: string): string => {
-  const clean = code.replace(/\./g, '');
-  if (clean.length >= 10) {
-    return `${clean.slice(0, 4)}.${clean.slice(4, 6)}.${clean.slice(6, 8)}.${clean.slice(8)}`;
-  } else if (clean.length >= 8) {
-    return `${clean.slice(0, 4)}.${clean.slice(4, 6)}.${clean.slice(6)}`;
-  } else if (clean.length >= 6) {
-    return `${clean.slice(0, 4)}.${clean.slice(4)}`;
-  }
-  return code;
-};
 
 // Get confidence badge color and label
 const getConfidenceBadge = (confidence: number): { label: string; bgColor: string; textColor: string } => {
@@ -213,7 +201,7 @@ export const ClassificationSection: React.FC<ClassificationSectionProps> = ({
       )}
 
       {/* HTS Code Card */}
-      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-5">
+      <div className="bg-gradient-to-br from-slate-50 to-teal-50/30 border border-slate-200 rounded-xl p-5">
         <div className="flex items-start justify-between mb-2">
           <div className="text-xs font-medium text-slate-500 uppercase tracking-wider">
             HTS Code
@@ -245,13 +233,13 @@ export const ClassificationSection: React.FC<ClassificationSectionProps> = ({
 
         {/* Split Confidence Breakdown */}
         {classification.splitConfidence && (
-          <div className="mt-4 pt-4 border-t border-blue-200/60">
+          <div className="mt-4 pt-4 border-t border-slate-200/60">
             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
               Confidence Breakdown
             </div>
             <div className="grid grid-cols-2 gap-3">
               {/* Heading Confidence */}
-              <div className="bg-white/70 rounded-lg p-3 border border-blue-100">
+              <div className="bg-white/70 rounded-lg p-3 border border-slate-200">
                 <div className="flex items-center gap-2 mb-1.5">
                   <Target size={14} className="text-teal-600" />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Heading</span>
@@ -276,7 +264,7 @@ export const ClassificationSection: React.FC<ClassificationSectionProps> = ({
               </div>
 
               {/* Code Confidence */}
-              <div className="bg-white/70 rounded-lg p-3 border border-blue-100">
+              <div className="bg-white/70 rounded-lg p-3 border border-slate-200">
                 <div className="flex items-center gap-2 mb-1.5">
                   <Hash size={14} className="text-teal-600" />
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Exact Code</span>
@@ -386,7 +374,7 @@ export const ClassificationSection: React.FC<ClassificationSectionProps> = ({
                         {step.code}
                       </span>
                       <span className={`text-xs font-semibold uppercase tracking-wider ${
-                        isLast ? 'text-blue-600' : 'text-slate-400'
+                        isLast ? 'text-teal-600' : 'text-slate-400'
                       }`}>
                         {step.level}
                       </span>
@@ -492,20 +480,36 @@ export const ClassificationSection: React.FC<ClassificationSectionProps> = ({
         </div>
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex gap-3 pt-2">
-        <Button size="middle" className="rounded-lg">
-          View alternatives
-        </Button>
-        <Button 
-          size="middle" 
-          type="primary" 
-          className="rounded-lg"
-          icon={<HelpCircle size={16} />}
-        >
-          Why this code?
-        </Button>
-      </div>
+      {/* Alternatives */}
+      {classification.alternatives.length > 0 && (
+        <div>
+          <div className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">
+            Alternative Classifications
+          </div>
+          <div className="space-y-2">
+            {classification.alternatives.map((alt, idx) => (
+              <div key={alt.code} className="flex items-center justify-between bg-slate-50 rounded-lg px-4 py-3 border border-slate-200">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-semibold text-slate-800">{formatHtsCode(alt.code)}</span>
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                      alt.confidence >= 85 ? 'bg-green-100 text-green-700'
+                        : alt.confidence >= 70 ? 'bg-blue-100 text-blue-700'
+                        : 'bg-orange-100 text-orange-700'
+                    }`}>
+                      {alt.confidence}%
+                    </span>
+                    {alt.dutyRate && (
+                      <span className="text-xs text-slate-500">MFN: {alt.dutyRate}</span>
+                    )}
+                  </div>
+                  <p className="text-sm text-slate-600 mt-0.5 truncate">{alt.description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

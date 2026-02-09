@@ -17,6 +17,9 @@ import { getBaseMfnRate, type BaseMfnRateResult } from '@/services/hts/database'
 import { prisma } from '@/lib/db';
 import { compareLandedCosts } from '@/services/sourcing/landed-cost';
 import { getImportStatsByHTS, type ImportStatsByCountry } from '@/services/usitcDataWeb';
+import { getPGARequirements, PGA_AGENCIES } from '@/data/pgaFlags';
+import { checkADCVDWarning, getADCVDOrdersByHTS } from '@/data/adcvdOrders';
+import { isSection232Product } from '@/data/tariffPrograms';
 import type { 
   ImportAnalysis, 
   ProductInput,
@@ -27,8 +30,12 @@ import type {
   CountryComparison,
   TariffBreakdownSummary,
   Compliance,
+  ComplianceAlert,
+  CompliancePassedCheck,
+  PGARequirement,
   Documentation,
   Optimization,
+  OptimizationOpportunity,
 } from '@/features/import-intelligence/types';
 
 export interface AnalyzeProductInput extends ProductInput {
@@ -99,18 +106,19 @@ export async function analyzeProduct(input: AnalyzeProductInput): Promise<Import
     classification.baseMfnRate
   );
   
-  // Step 4: Compliance Checks
-  const compliance = await getComplianceChecks(input, classification.htsCode);
+  // Step 4: Compliance Checks (uses landed cost tariff stack for context)
+  const compliance = await getComplianceChecks(input, classification.htsCode, landedCost);
   
-  // Step 5: Documentation Requirements
-  const documentation = await getDocumentationRequirements(input, classification.htsCode);
+  // Step 5: Documentation Requirements (uses PGA data + compliance context)
+  const documentation = await getDocumentationRequirements(input, classification.htsCode, compliance);
   
-  // Step 6: Optimization Opportunities
+  // Step 6: Optimization Opportunities (uses ALL prior step data)
   const optimization = await getOptimizationOpportunities(
     input,
-    classification.htsCode,
+    classification,
     landedCost,
-    countryComparison
+    countryComparison,
+    compliance
   );
   
   const analysis: ImportAnalysis = {
@@ -872,71 +880,735 @@ async function getCountryComparison(
   };
 }
 
+/** Sanctioned / embargoed countries that require special warnings */
+const SANCTIONED_COUNTRIES: Record<string, { name: string; level: 'full' | 'partial'; programs: string[] }> = {
+  CU: { name: 'Cuba', level: 'full', programs: ['OFAC - Cuban Assets Control Regulations'] },
+  IR: { name: 'Iran', level: 'full', programs: ['OFAC - Iranian Transactions and Sanctions Regulations'] },
+  KP: { name: 'North Korea', level: 'full', programs: ['OFAC - North Korea Sanctions Regulations'] },
+  SY: { name: 'Syria', level: 'full', programs: ['OFAC - Syrian Sanctions Regulations'] },
+  RU: { name: 'Russia', level: 'partial', programs: ['OFAC - Russian Harmful Foreign Activities Sanctions', 'BIS Entity List restrictions'] },
+  BY: { name: 'Belarus', level: 'partial', programs: ['OFAC - Belarus Sanctions Regulations'] },
+  VE: { name: 'Venezuela', level: 'partial', programs: ['OFAC - Venezuela Sanctions Regulations'] },
+  MM: { name: 'Myanmar', level: 'partial', programs: ['OFAC - Burma Sanctions'] },
+};
+
 /**
  * Step 4: Run compliance checks
+ * 
+ * Pulls from real data sources:
+ * - PGA requirements by HTS chapter
+ * - AD/CVD order database
+ * - UFLPA forced labor risk
+ * - Section 232/301/IEEPA tariff program warnings (from landed cost data)
+ * - Sanctioned country checks
+ * - Denied party risk flagging (by country risk level)
  */
 async function getComplianceChecks(
   input: AnalyzeProductInput,
-  htsCode: string
+  htsCode: string,
+  landedCost: LandedCost
 ): Promise<Compliance> {
-  const alerts = [];
-  const passedChecks = [];
-  
-  // Check for high tariff exposure
-  // TODO: Integrate with actual tariff data
-  const chapter = htsCode.substring(0, 2);
-  
-  // Check for UFLPA risk (cotton/textiles from China)
-  if (input.countryCode === 'CN' && ['52', '61', '62', '63'].includes(chapter)) {
+  const requestTimestamp = new Date().toISOString();
+  const alerts: ComplianceAlert[] = [];
+  const passedChecks: CompliancePassedCheck[] = [];
+  const pgaRequirements: PGARequirement[] = [];
+
+  const cleanCode = htsCode.replace(/\./g, '');
+  const chapter = cleanCode.substring(0, 2);
+
+  // ─── 1. Sanctions / Embargo Check ───────────────────────────────────
+  const sanctionInfo = SANCTIONED_COUNTRIES[input.countryCode];
+  if (sanctionInfo) {
     alerts.push({
-      level: 'high' as const,
-      title: 'UFLPA / Forced Labor Risk',
-      description: 'Cotton products from China require due diligence under the Uyghur Forced Labor Prevention Act (UFLPA).',
-      requiredActions: [
-        'Verify cotton is NOT sourced from Xinjiang region',
-        'Obtain supplier declaration of compliance',
-        'Document supply chain traceability',
-      ],
-      risk: 'Shipment detention and potential seizure',
+      level: 'high',
+      category: 'sanctions',
+      title: `${sanctionInfo.name} — ${sanctionInfo.level === 'full' ? 'Comprehensive' : 'Partial'} Sanctions`,
+      description: sanctionInfo.level === 'full'
+        ? `${sanctionInfo.name} is subject to comprehensive US sanctions. Most imports are prohibited without a specific OFAC license.`
+        : `${sanctionInfo.name} is subject to partial US sanctions. Certain transactions may be restricted. Verify your specific product and end-use.`,
+      requiredActions: sanctionInfo.level === 'full'
+        ? ['Obtain OFAC specific license before importing', 'Consult trade compliance counsel', 'Verify no prohibited end-uses']
+        : ['Screen transaction against current OFAC restrictions', 'Verify product is not on restricted list', 'Document compliance due diligence'],
+      risk: sanctionInfo.level === 'full' ? 'Criminal penalties up to $1M and 20 years imprisonment' : 'Civil penalties up to $330,000 per violation',
+      learnMoreUrl: 'https://ofac.treasury.gov/sanctions-programs-and-country-information',
+    });
+  } else {
+    passedChecks.push({
+      category: 'sanctions',
+      label: 'Sanctions screening: No country-level sanctions',
+      detail: `${getCountryName(input.countryCode)} is not subject to US comprehensive or sectoral sanctions`,
     });
   }
+
+  // ─── 2. UFLPA / Forced Labor Check ─────────────────────────────────
+  // Cotton, textiles, apparel, polysilicon, tomatoes from China/Xinjiang
+  const uflpaChapters = ['52', '54', '55', '61', '62', '63']; // cotton, man-made filaments, man-made staple, knit apparel, woven apparel, other textiles
+  const uflpaTomatoes = chapter === '20' || cleanCode.startsWith('0702'); // prepared vegetables or fresh tomatoes
+  const uflpaPolysilicon = cleanCode.startsWith('2804') || cleanCode.startsWith('854140'); // silicon or solar cells
+
+  if (input.countryCode === 'CN') {
+    if (uflpaChapters.includes(chapter)) {
+      alerts.push({
+        level: 'high',
+        category: 'forced_labor',
+        title: 'UFLPA — Forced Labor Risk (Textiles)',
+        description: 'Cotton and textile products from China face heightened scrutiny under the Uyghur Forced Labor Prevention Act. CBP applies a rebuttable presumption that goods from Xinjiang are made with forced labor.',
+        requiredActions: [
+          'Verify cotton is NOT sourced from Xinjiang Uyghur Autonomous Region',
+          'Obtain supplier declaration of compliance with UFLPA',
+          'Document complete supply chain traceability (farm → mill → factory)',
+          'Prepare forced labor due diligence records for CBP review',
+        ],
+        risk: 'Shipment detention, seizure, and potential Withhold Release Order (WRO)',
+        learnMoreUrl: 'https://www.cbp.gov/trade/forced-labor/UFLPA',
+      });
+    } else if (uflpaPolysilicon) {
+      alerts.push({
+        level: 'high',
+        category: 'forced_labor',
+        title: 'UFLPA — Forced Labor Risk (Polysilicon/Solar)',
+        description: 'Polysilicon and solar products from China are a UFLPA enforcement priority. CBP has detained significant volumes of solar panels and polysilicon.',
+        requiredActions: [
+          'Map complete polysilicon supply chain',
+          'Verify no Xinjiang-region polysilicon in product',
+          'Prepare supply chain traceability documentation',
+        ],
+        risk: 'Shipment detention and seizure — solar products are a top CBP enforcement priority',
+        learnMoreUrl: 'https://www.cbp.gov/trade/forced-labor/UFLPA',
+      });
+    } else if (uflpaTomatoes) {
+      alerts.push({
+        level: 'medium',
+        category: 'forced_labor',
+        title: 'UFLPA — Forced Labor Risk (Tomato Products)',
+        description: 'Tomato products from China may face UFLPA scrutiny. Xinjiang is a major tomato-producing region.',
+        requiredActions: [
+          'Verify tomato sourcing is outside Xinjiang region',
+          'Obtain supplier declarations',
+        ],
+        risk: 'Potential detention if supply chain links to Xinjiang',
+        learnMoreUrl: 'https://www.cbp.gov/trade/forced-labor/UFLPA',
+      });
+    } else {
+      passedChecks.push({
+        category: 'forced_labor',
+        label: 'UFLPA: Product not in high-priority enforcement categories',
+        detail: 'This HTS chapter is not a primary UFLPA enforcement target, but general forced labor due diligence is recommended for all China imports',
+      });
+    }
+  } else {
+    passedChecks.push({
+      category: 'forced_labor',
+      label: 'UFLPA: Not applicable',
+      detail: 'UFLPA applies primarily to goods from China',
+    });
+  }
+
+  // ─── 3. AD/CVD Check (Real data from adcvdOrders.ts) ───────────────
+  const adcvdResult = checkADCVDWarning(cleanCode, input.countryCode);
+  let adcvdWarningData: Compliance['adcvdWarning'] | undefined;
+
+  if (adcvdResult.hasWarning && adcvdResult.warning) {
+    const w = adcvdResult.warning;
+    // Find matching orders for duty range
+    const matchingOrders = getADCVDOrdersByHTS(cleanCode);
+    const dutyRange = matchingOrders.length > 0 ? matchingOrders[0].dutyRange : undefined;
+    const orderCount = matchingOrders.reduce((sum, o) => sum + o.orderCount, 0);
+
+    adcvdWarningData = {
+      productCategory: w.productCategory,
+      affectedCountries: w.affectedCountries,
+      isCountryAffected: w.isCountryAffected,
+      dutyRange,
+      orderCount,
+      lookupUrl: w.lookupUrl,
+    };
+
+    alerts.push({
+      level: w.isCountryAffected ? 'high' : 'medium',
+      category: 'adcvd',
+      title: `AD/CVD Risk — ${w.productCategory}`,
+      description: w.message,
+      requiredActions: w.isCountryAffected
+        ? [
+            'Check CBP AD/CVD database for manufacturer-specific duty rates',
+            'Obtain AD/CVD case number from your customs broker',
+            'Budget for potential additional duties of ' + (dutyRange || '10%-500%+'),
+            'Consider bonding requirements for AD/CVD entries',
+          ]
+        : [
+            'Be aware of AD/CVD orders if sourcing changes to affected countries',
+            'Monitor ITC and Commerce Department for new investigations',
+          ],
+      risk: w.isCountryAffected
+        ? `Additional duties of ${dutyRange || '10%-500%+'} may apply on top of base MFN rate`
+        : 'No current exposure, but monitor if sourcing strategy changes',
+      financialExposure: w.isCountryAffected ? dutyRange : undefined,
+      learnMoreUrl: w.lookupUrl,
+    });
+  } else {
+    passedChecks.push({
+      category: 'adcvd',
+      label: 'AD/CVD: No active orders for this HTS code/country combination',
+      detail: `No antidumping or countervailing duty orders found matching ${cleanCode} from ${getCountryName(input.countryCode)}`,
+    });
+  }
+
+  // ─── 4. Section 232 Check (Steel/Aluminum/Auto) ────────────────────
+  const s232 = isSection232Product(cleanCode);
+  if (s232.steel || s232.aluminum) {
+    const product = s232.steel ? 'steel' : 'aluminum';
+    alerts.push({
+      level: 'high',
+      category: 'tariff_program',
+      title: `Section 232 — 25% ${product.charAt(0).toUpperCase() + product.slice(1)} Tariff`,
+      description: `This product is classified as a ${product} product subject to Section 232 national security tariffs. A 25% ad valorem tariff applies to all imports regardless of country of origin.`,
+      requiredActions: [
+        `Confirm product is correctly classified under ${product} headings`,
+        'Check for applicable Section 232 exclusions (product-specific)',
+        'File exclusion request if product qualifies (via Commerce Department)',
+      ],
+      risk: '25% tariff on dutiable value — applies in addition to base MFN rate',
+      financialExposure: '25%',
+      learnMoreUrl: 'https://www.commerce.gov/section-232-investigations',
+    });
+  } else if (s232.auto) {
+    alerts.push({
+      level: 'high',
+      category: 'tariff_program',
+      title: 'Section 232 — 25% Automobile Tariff',
+      description: 'This product is classified as an automobile or automobile part subject to Section 232 tariffs.',
+      requiredActions: [
+        'Verify product classification under Chapter 87',
+        'Check USMCA content requirements for potential exemption',
+      ],
+      risk: '25% tariff on dutiable value',
+      financialExposure: '25%',
+      learnMoreUrl: 'https://www.commerce.gov/section-232-investigations',
+    });
+  } else {
+    passedChecks.push({
+      category: 'tariff_program',
+      label: 'Section 232: Not applicable',
+      detail: 'This product is not classified as steel, aluminum, or automobile — no Section 232 tariff applies',
+    });
+  }
+
+  // ─── 5. Tariff Program Warnings (from landed cost data) ────────────
+  // Use the actual tariff layers calculated in Step 2 to warn about active programs
+  const activeLayers = landedCost.duties.layers.filter(l => l.rate > 0);
   
-  // Passed checks
-  passedChecks.push('Denied Party Screening: No matches found');
-  passedChecks.push('AD/CVD Orders: No active orders for this HTS/country');
-  
+  for (const layer of activeLayers) {
+    if (layer.programType === 'section_301') {
+      alerts.push({
+        level: 'medium',
+        category: 'tariff_program',
+        title: `Section 301 — ${layer.rate}% China Tariff`,
+        description: `${layer.description}. This tariff applies to products of Chinese origin under the Trade Act of 1974.`,
+        financialExposure: `${layer.rate}%`,
+        learnMoreUrl: 'https://ustr.gov/issue-areas/enforcement/section-301-investigations',
+      });
+    } else if (layer.programType === 'ieepa_fentanyl' || layer.programType === 'ieepa_baseline' || layer.programType === 'ieepa_reciprocal') {
+      // Only show IEEPA warning for rates > 10% (baseline is expected)
+      if (layer.rate > 10) {
+        alerts.push({
+          level: 'medium',
+          category: 'tariff_program',
+          title: `IEEPA Emergency Tariff — ${layer.rate}%`,
+          description: `${layer.description}. Emergency tariff under the International Emergency Economic Powers Act.`,
+          financialExposure: `${layer.rate}%`,
+          learnMoreUrl: 'https://www.whitehouse.gov/briefing-room/presidential-actions/',
+        });
+      }
+    }
+  }
+
+  // If total effective duty rate > 50%, add high tariff exposure warning
+  const effectiveRate = landedCost.duties.effectiveRate;
+  if (effectiveRate > 50) {
+    alerts.push({
+      level: 'medium',
+      category: 'tariff_program',
+      title: `High Tariff Exposure — ${effectiveRate.toFixed(1)}% Effective Rate`,
+      description: `The combined effective duty rate for this product exceeds 50%. This significantly impacts landed cost and may warrant sourcing optimization.`,
+      requiredActions: [
+        'Review classification for accuracy — small differences can change rates',
+        'Explore alternative sourcing countries with lower tariff exposure',
+        'Consider FTA qualification if applicable',
+        'Evaluate duty drawback opportunities if re-exporting',
+      ],
+      financialExposure: `${effectiveRate.toFixed(1)}% of dutiable value`,
+    });
+  }
+
+  // ─── 6. PGA Requirements (from pgaFlags.ts) ────────────────────────
+  const pgaResult = getPGARequirements(cleanCode);
+  if (pgaResult && pgaResult.flags.length > 0) {
+    // Build PGA requirement objects for the UI
+    const agencyMap = new Map<string, PGARequirement>();
+    for (const flag of pgaResult.flags) {
+      const agency = PGA_AGENCIES[flag.agency];
+      if (!agency) continue;
+      
+      if (!agencyMap.has(flag.agency)) {
+        agencyMap.set(flag.agency, {
+          agencyCode: agency.code,
+          agencyName: agency.name,
+          flags: [],
+          website: agency.website,
+        });
+      }
+      agencyMap.get(flag.agency)!.flags.push({
+        code: flag.code,
+        name: flag.name,
+        description: flag.description,
+        requirements: flag.requirements,
+      });
+    }
+
+    pgaRequirements.push(...agencyMap.values());
+
+    // Determine if PGA requirements are worth alerting about
+    const hasLicense = pgaResult.flags.some(f =>
+      f.requirements.some(r =>
+        r.toLowerCase().includes('license') ||
+        r.toLowerCase().includes('permit') ||
+        r.toLowerCase().includes('registration')
+      )
+    );
+
+    if (hasLicense) {
+      alerts.push({
+        level: pgaResult.flags.length >= 3 ? 'high' : 'medium',
+        category: 'pga',
+        title: `${pgaResult.flags.length} PGA Requirement${pgaResult.flags.length > 1 ? 's' : ''} — License/Permit Required`,
+        description: `Products in Chapter ${chapter} (${pgaResult.chapterName}) require compliance with ${pgaRequirements.map(p => p.agencyCode).join(', ')}. Licenses or permits must be obtained before import.`,
+        requiredActions: pgaResult.flags.flatMap(f => f.requirements).slice(0, 5),
+        risk: 'Shipment may be refused entry or detained at port without proper documentation',
+        learnMoreUrl: 'https://www.cbp.gov/trade/partner-government-agencies',
+      });
+    } else {
+      alerts.push({
+        level: 'low',
+        category: 'pga',
+        title: `${pgaResult.flags.length} PGA Filing Requirement${pgaResult.flags.length > 1 ? 's' : ''}`,
+        description: `Products in Chapter ${chapter} (${pgaResult.chapterName}) require filings with ${pgaRequirements.map(p => p.agencyCode).join(', ')}.${pgaResult.notes ? ' ' + pgaResult.notes : ''}`,
+        learnMoreUrl: 'https://www.cbp.gov/trade/partner-government-agencies',
+      });
+    }
+  } else {
+    passedChecks.push({
+      category: 'pga',
+      label: 'PGA requirements: None identified for this HTS chapter',
+      detail: `Chapter ${chapter} does not have common PGA filing requirements`,
+    });
+  }
+
+  // ─── 7. FTA Opportunity (if current country has no FTA) ────────────
+  // Check if the tariff result shows an FTA is available for the current country
+  const currentTariffLayers = landedCost.duties.layers;
+  const hasFtaLayer = currentTariffLayers.some(l => l.programType === 'fta_discount' && l.rate < 0);
+  if (hasFtaLayer) {
+    passedChecks.push({
+      category: 'fta',
+      label: 'FTA benefit: Active for this country',
+      detail: 'A free trade agreement discount is already applied to your duty calculation',
+    });
+  } else {
+    // No FTA for current country — check if FTA countries exist as potential alternatives
+    // We don't have country comparison data here, so provide a general note
+    const ftaPartnerCountries = ['MX', 'CA', 'KR', 'AU', 'SG', 'CL', 'CO', 'PE', 'MA', 'JO', 'BH', 'OM', 'IL',
+      'CR', 'DO', 'SV', 'GT', 'HN', 'NI', 'PA'];
+    if (!ftaPartnerCountries.includes(input.countryCode) && effectiveRate > 10) {
+      alerts.push({
+        level: 'low',
+        category: 'fta',
+        title: 'No FTA Benefit Available',
+        description: `${getCountryName(input.countryCode)} does not have a US free trade agreement. Consider sourcing from FTA partner countries (Mexico, Canada, South Korea, etc.) to potentially eliminate the base MFN duty.`,
+        requiredActions: [
+          'Review alternative sourcing countries with FTA access',
+          'Use the FTA Calculator to check qualification requirements',
+        ],
+        learnMoreUrl: '/dashboard/compliance/fta-calculator',
+      });
+    } else if (ftaPartnerCountries.includes(input.countryCode)) {
+      alerts.push({
+        level: 'low',
+        category: 'fta',
+        title: 'FTA Available — Check Qualification',
+        description: `${getCountryName(input.countryCode)} has a US free trade agreement but no FTA discount is currently applied. Your product may qualify for preferential rates if it meets the rules of origin.`,
+        requiredActions: [
+          'Use the FTA Calculator to verify your product qualifies',
+          'Ensure supplier can provide a certificate of origin',
+        ],
+        learnMoreUrl: '/dashboard/compliance/fta-calculator',
+      });
+    }
+  }
+
+  // ─── 8. Denied Party Risk (country-level risk indicator) ───────────
+  // Full screening requires a specific party name, which we don't have in the 
+  // general flow. Flag if the country has high denied party activity.
+  const highDeniedPartyCountries = ['CN', 'RU', 'IR', 'SY', 'KP', 'PK', 'AE', 'MY'];
+  if (highDeniedPartyCountries.includes(input.countryCode)) {
+    alerts.push({
+      level: 'low',
+      category: 'general',
+      title: 'Elevated Denied Party Risk — Screen Your Supplier',
+      description: `${getCountryName(input.countryCode)} has a high concentration of entities on OFAC SDN and BIS Entity Lists. Screen your specific supplier before transacting.`,
+      requiredActions: [
+        'Screen supplier name against OFAC SDN List',
+        'Screen against BIS Entity List and Denied Persons List',
+        'Document screening results for compliance records',
+      ],
+      learnMoreUrl: '/dashboard/compliance/denied-party',
+    });
+  } else {
+    passedChecks.push({
+      category: 'general',
+      label: 'Denied party risk: Standard — screen supplier before transacting',
+      detail: 'Country does not have elevated denied party concentration',
+    });
+  }
+
+  // ─── Calculate Risk Score ──────────────────────────────────────────
+  let riskScore = 0;
+  for (const alert of alerts) {
+    if (alert.level === 'high') riskScore += 30;
+    else if (alert.level === 'medium') riskScore += 15;
+    else riskScore += 5;
+  }
+  riskScore = Math.min(100, riskScore);
+
+  const riskLevel: Compliance['riskLevel'] =
+    riskScore >= 50 ? 'high' : riskScore >= 20 ? 'medium' : 'low';
+
+  console.log(`[Orchestrator] ${requestTimestamp} Compliance: ${alerts.length} alerts, ${passedChecks.length} passed, risk=${riskLevel} (${riskScore})`);
+
   return {
     alerts,
     passedChecks,
-    riskLevel: alerts.length > 0 ? 'high' : 'low',
+    riskLevel,
+    riskScore,
+    pgaRequirements,
+    adcvdWarning: adcvdWarningData,
+    toolLinks: {
+      deniedPartySearch: '/dashboard/compliance/denied-party',
+      adcvdLookup: '/dashboard/compliance/addcvd',
+      pgaLookup: '/dashboard/compliance/pga',
+      ftaCalculator: '/dashboard/compliance/fta-calculator',
+    },
   };
 }
 
 /**
  * Step 5: Determine documentation requirements
+ * 
+ * Generates a comprehensive documentation checklist based on:
+ * - Universal CBP requirements (always: commercial invoice, packing list, bill of lading)
+ * - PGA-driven requirements (from compliance step — CPSC, FDA, FCC, EPA, etc.)
+ * - Product attribute-driven requirements (batteries, chemicals, children's products, etc.)
+ * - Country-driven requirements (UFLPA for China, COO labeling)
+ * - HTS chapter-specific requirements (textiles → fiber content, food → prior notice, etc.)
  */
 async function getDocumentationRequirements(
   input: AnalyzeProductInput,
-  htsCode: string
+  htsCode: string,
+  compliance: Compliance
 ): Promise<Documentation> {
-  const critical = [
+  const cleanCode = htsCode.replace(/\./g, '');
+  const chapter = cleanCode.substring(0, 2);
+  const countryName = getCountryName(input.countryCode);
+
+  // ─── CRITICAL: Universal CBP requirements (shipment held without these) ──
+  const critical: Documentation['critical'] = [
     {
       name: 'Commercial Invoice',
-      criticality: 'critical' as const,
-      description: 'Must include: Seller, buyer, description, value, terms',
+      criticality: 'critical',
+      description: 'Required for every import entry. Establishes transaction value for duty assessment.',
+      mustInclude: [
+        'Seller and buyer names/addresses',
+        'Detailed product description',
+        'Unit price, quantity, and total value',
+        'Currency and terms of sale (FOB/CIF)',
+        'Country of origin',
+        'HTS classification (recommended)',
+      ],
     },
     {
       name: 'Packing List',
-      criticality: 'critical' as const,
-      description: 'Must include: Carton count, weights, dimensions',
+      criticality: 'critical',
+      description: 'Required for all shipments. Used by CBP to verify contents match invoice.',
+      mustInclude: [
+        'Number of cartons/pallets',
+        'Gross and net weights per carton',
+        'Dimensions per carton',
+        'Contents description per carton',
+      ],
+    },
+    {
+      name: 'Bill of Lading / Airway Bill',
+      criticality: 'critical',
+      description: 'Carrier document proving goods are in transit. Required for customs release.',
+      mustInclude: [
+        'Shipper and consignee details',
+        'Port of loading and discharge',
+        'Number of packages and weight',
+        'Freight terms (prepaid/collect)',
+      ],
     },
   ];
-  
-  const required: Array<{ name: string; criticality: 'required'; description: string; agency?: string }> = [];
-  const recommended: Array<{ name: string; criticality: 'recommended'; description: string }> = [];
-  
-  // Check for dangerous goods
-  let dangerousGoods = undefined;
+
+  // ─── REQUIRED: PGA-driven + attribute-driven docs ────────────────────────
+  const required: Documentation['required'] = [];
+
+  // --- PGA-driven requirements (from compliance step) ---
+  if (compliance.pgaRequirements.length > 0) {
+    for (const pga of compliance.pgaRequirements) {
+      for (const flag of pga.flags) {
+        // Each PGA flag maps to specific documentation
+        const pgaDoc = getPGADocumentation(pga.agencyCode, flag.code, flag.name);
+        if (pgaDoc) {
+          // Avoid duplicates
+          if (!required.some(d => d.name === pgaDoc.name)) {
+            required.push(pgaDoc);
+          }
+        }
+      }
+    }
+  }
+
+  // --- Textiles (Chapters 50-63): Fiber content labels + COO labels ---
+  const chapterNum = parseInt(chapter, 10);
+  if (chapterNum >= 50 && chapterNum <= 63) {
+    if (!required.some(d => d.name === 'Fiber Content Labels')) {
+      required.push({
+        name: 'Fiber Content Labels',
+        criticality: 'required',
+        description: 'Textile Fiber Products Identification Act requires fiber composition on every garment.',
+        agency: 'FTC',
+        mustInclude: [
+          'Generic fiber names and percentages (e.g., "100% Cotton")',
+          'Manufacturer or importer name (RN number accepted)',
+          'Country of origin',
+        ],
+        learnMoreUrl: 'https://www.ftc.gov/legal-library/browse/rules/textile-fiber-products-identification-act',
+      });
+    }
+    if (!required.some(d => d.name === 'Country of Origin Labels')) {
+      required.push({
+        name: 'Country of Origin Labels',
+        criticality: 'required',
+        description: `All textile products must be labeled with country of origin. Each garment requires "Made in ${countryName}" permanently affixed.`,
+        agency: 'CBP / FTC',
+        mustInclude: [
+          `"Made in ${countryName}" on each garment`,
+          'Label must be conspicuous, legible, and not easily removed',
+          'Must survive ordinary use and cleaning',
+        ],
+        learnMoreUrl: 'https://www.cbp.gov/trade/rulings/country-origin-marking',
+      });
+    }
+  }
+
+  // --- Children's products: CPSIA compliance ---
+  if (input.attributes.forChildren) {
+    if (!required.some(d => d.name === "Children's Product Certificate (CPC)")) {
+      required.push({
+        name: "Children's Product Certificate (CPC)",
+        criticality: 'required',
+        description: 'CPSIA requires third-party testing and certification for all products designed for children 12 and under.',
+        agency: 'CPSC',
+        mustInclude: [
+          'Third-party test report from CPSC-accepted lab',
+          'Lead content test results (≤100 ppm)',
+          'Phthalate test results (if applicable)',
+          'Tracking label information',
+          'Small parts test (if for children under 3)',
+        ],
+        learnMoreUrl: 'https://www.cpsc.gov/Business--Manufacturing/Testing-Certification/Childrens-Product-Certificate',
+      });
+    }
+  }
+
+  // --- Wireless / RF devices: FCC authorization ---
+  if (input.attributes.wireless) {
+    if (!required.some(d => d.name === 'FCC Equipment Authorization')) {
+      required.push({
+        name: 'FCC Equipment Authorization',
+        criticality: 'required',
+        description: 'All radio frequency devices must have FCC authorization before import. CBP may detain non-compliant RF devices.',
+        agency: 'FCC',
+        mustInclude: [
+          'FCC ID number (on product and packaging)',
+          'Grant of equipment authorization',
+          'Test report from accredited lab',
+        ],
+        learnMoreUrl: 'https://www.fcc.gov/oet/equipment-authorization',
+      });
+    }
+  }
+
+  // --- Medical devices: FDA registration ---
+  if (input.attributes.medicalDevice) {
+    if (!required.some(d => d.name === 'FDA Device Registration & Listing')) {
+      required.push({
+        name: 'FDA Device Registration & Listing',
+        criticality: 'required',
+        description: 'Medical devices must be registered with FDA and listed before import. Class II/III devices may need 510(k) or PMA clearance.',
+        agency: 'FDA',
+        mustInclude: [
+          'FDA establishment registration number',
+          'Device listing number',
+          '510(k) clearance or PMA number (if applicable)',
+          'Labeling in English with intended use',
+        ],
+        learnMoreUrl: 'https://www.fda.gov/medical-devices/how-study-and-market-your-device/device-registration-and-listing',
+      });
+    }
+  }
+
+  // --- Food contact materials ---
+  if (input.attributes.foodContact) {
+    if (!required.some(d => d.name === 'FDA Food Contact Notification')) {
+      required.push({
+        name: 'FDA Food Contact Notification',
+        criticality: 'required',
+        description: 'Materials that contact food must comply with FDA food contact substance regulations (21 CFR 174-186).',
+        agency: 'FDA',
+        mustInclude: [
+          'Food Contact Notification (FCN) number if new substance',
+          'Compliance statement referencing 21 CFR section',
+          'Migration testing results (if applicable)',
+        ],
+        learnMoreUrl: 'https://www.fda.gov/food/food-ingredients-packaging/food-contact-substances-fcs',
+      });
+    }
+  }
+
+  // --- Chemicals: TSCA compliance ---
+  if (input.attributes.containsChemicals) {
+    if (!required.some(d => d.name === 'TSCA Import Certification')) {
+      required.push({
+        name: 'TSCA Import Certification',
+        criticality: 'required',
+        description: 'Chemical substances must be certified as compliant with TSCA. Positive or negative certification required at entry.',
+        agency: 'EPA',
+        mustInclude: [
+          'TSCA certification statement (positive or negative)',
+          'CAS number for each chemical substance',
+          'Confirmation substance is on TSCA Inventory',
+        ],
+        learnMoreUrl: 'https://www.epa.gov/tsca-import-export',
+      });
+    }
+  }
+
+  // --- Country of origin marking (non-textiles, universal CBP requirement) ---
+  if (chapterNum < 50 || chapterNum > 63) {
+    // Non-textiles: general 19 USC 1304 marking requirement
+    if (!required.some(d => d.name === 'Country of Origin Marking')) {
+      required.push({
+        name: 'Country of Origin Marking',
+        criticality: 'required',
+        description: `19 USC §1304 requires every article of foreign origin to be marked with country of origin in English. Products must show "Made in ${countryName}" or equivalent.`,
+        agency: 'CBP',
+        mustInclude: [
+          `"Made in ${countryName}" or "Product of ${countryName}" marking`,
+          'Marking must be legible, permanent, and in a conspicuous location',
+          'Marking must survive to ultimate purchaser',
+        ],
+        learnMoreUrl: 'https://www.cbp.gov/trade/rulings/country-origin-marking',
+      });
+    }
+  }
+
+  // ─── RECOMMENDED: Best practices that speed clearance ────────────────────
+  const recommended: Documentation['recommended'] = [];
+
+  // --- UFLPA compliance documentation (China + high-risk products) ---
+  const uflpaChapters = ['50', '51', '52', '53', '54', '55', '56', '57', '58', '59', '60', '61', '62', '63', '85'];
+  const uflpaKeywords = ['cotton', 'polysilicon', 'solar', 'tomato', 'viscose', 'uyghur'];
+  const isUflpaRisk = input.countryCode === 'CN' && (
+    uflpaChapters.includes(chapter) ||
+    uflpaKeywords.some(kw => (input.description || '').toLowerCase().includes(kw))
+  );
+  if (isUflpaRisk) {
+    recommended.push({
+      name: 'UFLPA Compliance Documentation',
+      criticality: 'recommended',
+      description: 'Uyghur Forced Labor Prevention Act (UFLPA) creates a rebuttable presumption that goods from Xinjiang involve forced labor. Proactive documentation significantly reduces detention risk.',
+      mustInclude: [
+        'Supplier declaration of no forced labor',
+        'Supply chain map showing origin of raw materials',
+        'Factory audit reports or social compliance certificates',
+        'Purchase orders and invoices tracing material origin',
+      ],
+      learnMoreUrl: 'https://www.cbp.gov/trade/forced-labor/UFLPA',
+    });
+  }
+
+  // --- Product photos (always recommended) ---
+  recommended.push({
+    name: 'Product Photos',
+    criticality: 'recommended',
+    description: 'Clear photos of product, labels, markings, and packaging. Helps CBP resolve questions without physical exam, reducing clearance delays.',
+    mustInclude: [
+      'Product from multiple angles',
+      'Close-up of all labels and markings',
+      'Packaging (inner and outer)',
+      'Country of origin marking visible',
+    ],
+  });
+
+  // --- Quality / inspection certificate ---
+  recommended.push({
+    name: 'Pre-Shipment Inspection Certificate',
+    criticality: 'recommended',
+    description: 'Third-party inspection report documenting product quality and specification compliance. Reduces likelihood of CBP intensive exam.',
+  });
+
+  // --- Certificate of origin for FTA-eligible countries ---
+  const ftaCountries: Record<string, string> = {
+    MX: 'USMCA', CA: 'USMCA',
+    AU: 'AUSFTA', SG: 'USFTA', CL: 'USCFTA', KR: 'KORUS',
+    CO: 'TPA', PA: 'TPA', PE: 'TPA',
+    IL: 'USIFTA', JO: 'USJFTA', BH: 'USBFTA', OM: 'USOFTA', MA: 'USSFTA',
+    GT: 'CAFTA-DR', HN: 'CAFTA-DR', SV: 'CAFTA-DR', CR: 'CAFTA-DR', DO: 'CAFTA-DR',
+  };
+  const ftaName = ftaCountries[input.countryCode];
+  if (ftaName) {
+    recommended.push({
+      name: `${ftaName} Certificate of Origin`,
+      criticality: 'recommended',
+      description: `If your product qualifies under ${ftaName}, a certificate of origin can eliminate the base MFN duty. Requires meeting rules of origin.`,
+      mustInclude: [
+        'Certified origin declaration (producer or exporter)',
+        'HS classification and description',
+        'Origin criterion met (tariff shift, RVC, etc.)',
+        `Blanket period (if applicable)`,
+      ],
+      learnMoreUrl: '/dashboard/compliance/fta-calculator',
+    });
+  }
+
+  // --- ISF (Importer Security Filing) for ocean shipments ---
+  recommended.push({
+    name: 'Importer Security Filing (ISF / "10+2")',
+    criticality: 'recommended',
+    description: 'Required for all ocean shipments 24 hours before vessel loading. Late filing results in $5,000+ penalty per violation.',
+    mustInclude: [
+      'Manufacturer name and address',
+      'Seller name and address',
+      'Container stuffing location',
+      'Consolidator name and address',
+      'HTS number(s)',
+    ],
+  });
+
+  // ─── DANGEROUS GOODS ─────────────────────────────────────────────────────
+  let dangerousGoods: Documentation['dangerousGoods'] = undefined;
+
   if (input.attributes.containsBattery) {
     dangerousGoods = {
       unClass: 'Class 9',
@@ -948,28 +1620,122 @@ async function getDocumentationRequirements(
       documents: [
         {
           name: 'UN38.3 Test Summary',
-          criticality: 'critical' as const,
-          description: 'Proves batteries passed UN safety tests',
+          criticality: 'critical',
+          description: 'Proves batteries passed UN transport safety tests. Required by all carriers and customs.',
+        },
+        {
+          name: 'MSDS / Safety Data Sheet',
+          criticality: 'required',
+          description: 'Material Safety Data Sheet for battery chemistry. Required for hazardous materials transport.',
         },
       ],
       carrierRestrictions: [
         {
           carrier: 'Air Freight',
           restriction: 'Watt-hour rating determines restrictions',
-          details: '≤100 Wh: Standard shipping, >100 Wh: Restricted',
+          details: '≤100 Wh: Standard shipping with proper documentation. >100 Wh: Restricted, cargo aircraft only.',
+        },
+        {
+          carrier: 'Ocean Freight',
+          restriction: 'IMDG Code compliance required',
+          details: 'Must comply with IMDG Code special provision 188. Proper shipping name and UN number on outer packaging.',
         },
       ],
       packagingRequirements: [
         'Batteries must be protected from short circuit',
-        'Equipment must be protected from activation',
-        'Strong outer packaging',
+        'Equipment must be protected from accidental activation',
+        'Strong outer packaging (drop test compliant)',
+        'Each package ≤ 5 kg net weight for lithium ion',
       ],
       labelingRequirements: [
-        'Lithium battery handling label on outer packaging',
+        'Lithium battery handling label (Class 9A) on outer packaging',
+        'UN number on packaging (UN3481)',
+        '"Cargo Aircraft Only" label if >100 Wh per cell',
       ],
     };
   }
-  
+
+  if (input.attributes.pressurized && !dangerousGoods) {
+    dangerousGoods = {
+      unClass: 'Class 2',
+      unNumber: 'UN1950',
+      properShippingName: 'Aerosols / Pressurized containers',
+      hazardClass: 'Class 2: Gases (compressed, liquefied, dissolved)',
+      packingGroup: undefined,
+      packingInstruction: 'Per DOT 49 CFR 173.306',
+      documents: [
+        {
+          name: 'DOT Hazardous Materials Certificate',
+          criticality: 'critical',
+          description: 'Certificate of compliance with DOT hazmat shipping requirements.',
+        },
+      ],
+      carrierRestrictions: [
+        {
+          carrier: 'Air Freight',
+          restriction: 'Limited quantities may apply',
+          details: 'Aerosols ≤ 500 mL: limited quantity provisions. > 500 mL: full hazmat regulations.',
+        },
+      ],
+      packagingRequirements: [
+        'DOT-approved containers',
+        'Pressure test certification',
+        'Proper cushioning and orientation',
+      ],
+      labelingRequirements: [
+        'Flammable gas or non-flammable gas label',
+        'Proper shipping name and UN number',
+      ],
+    };
+  }
+
+  if (input.attributes.flammable && !dangerousGoods) {
+    dangerousGoods = {
+      unClass: 'Class 3',
+      unNumber: 'UN1993',
+      properShippingName: 'Flammable liquid, N.O.S.',
+      hazardClass: 'Class 3: Flammable liquids',
+      packingGroup: 'II',
+      packingInstruction: 'Per DOT 49 CFR 173.150',
+      documents: [
+        {
+          name: 'DOT Hazardous Materials Certificate',
+          criticality: 'critical',
+          description: 'Certificate of compliance with DOT hazmat shipping requirements for flammable liquids.',
+        },
+        {
+          name: 'MSDS / Safety Data Sheet',
+          criticality: 'required',
+          description: 'Safety Data Sheet with flash point, flammability class, and handling procedures.',
+        },
+      ],
+      carrierRestrictions: [
+        {
+          carrier: 'Air Freight',
+          restriction: 'Flash point determines restrictions',
+          details: 'Flash point ≤ 60°C: requires full hazmat documentation. Some carriers refuse flammable cargo.',
+        },
+        {
+          carrier: 'Ocean Freight',
+          restriction: 'IMDG Code Class 3 requirements',
+          details: 'Must comply with IMDG packing, labeling, and stowage requirements.',
+        },
+      ],
+      packagingRequirements: [
+        'UN-certified packaging with proper closure',
+        'Inner containers must not exceed 5L (Packing Group II)',
+        'Absorbent material between inner and outer packaging',
+      ],
+      labelingRequirements: [
+        'Class 3 flammable liquid diamond label',
+        'UN number and proper shipping name',
+        'Orientation arrows on outer packaging',
+      ],
+    };
+  }
+
+  console.log(`[Orchestrator] Documentation: ${critical.length} critical, ${required.length} required, ${recommended.length} recommended${dangerousGoods ? ', +DG' : ''}`);
+
   return {
     critical,
     required,
@@ -979,54 +1745,528 @@ async function getDocumentationRequirements(
 }
 
 /**
+ * Map PGA flag codes to specific documentation requirements.
+ * Returns a DocumentRequirement for known flag patterns, or null for generic flags.
+ */
+function getPGADocumentation(
+  agencyCode: string,
+  flagCode: string,
+  flagName: string
+): Documentation['required'][number] | null {
+  // Map well-known PGA flags to specific documentation
+  const pgaDocMap: Record<string, Documentation['required'][number]> = {
+    CP1: {
+      name: "CPSC Children's Product Certificate",
+      criticality: 'required',
+      description: "Third-party tested certification that children's product meets all applicable CPSC safety rules.",
+      agency: 'CPSC',
+      mustInclude: [
+        'Test report from CPSC-accepted laboratory',
+        'Lead content and phthalate test results',
+        'Tracking label information',
+        'Applicable ASTM/CPSIA standard references',
+      ],
+      learnMoreUrl: 'https://www.cpsc.gov/Business--Manufacturing/Testing-Certification/Childrens-Product-Certificate',
+    },
+    CP2: {
+      name: 'CPSC General Conformity Certificate',
+      criticality: 'required',
+      description: 'Certification that consumer product complies with applicable CPSC safety standards.',
+      agency: 'CPSC',
+      mustInclude: [
+        'Applicable safety standard (e.g., 16 CFR Part 1633 for mattresses)',
+        'Test results from CPSC-accepted lab',
+        'Manufacturer/importer contact information',
+      ],
+      learnMoreUrl: 'https://www.cpsc.gov/Business--Manufacturing/Testing-Certification/General-Conformity-Certificate',
+    },
+    FC1: {
+      name: 'FCC Equipment Authorization',
+      criticality: 'required',
+      description: 'FCC grant of equipment authorization for radio frequency devices. Required before import.',
+      agency: 'FCC',
+      mustInclude: [
+        'FCC ID number',
+        'Grant of equipment authorization document',
+        'Test report from accredited laboratory',
+        'FCC label on product',
+      ],
+      learnMoreUrl: 'https://www.fcc.gov/oet/equipment-authorization',
+    },
+    FD1: {
+      name: 'FDA Prior Notice',
+      criticality: 'required',
+      description: 'Food products require advance notification to FDA before arrival. Must be submitted via ACE or FDA Industry Systems.',
+      agency: 'FDA',
+      mustInclude: [
+        'Product description and FDA Product Code',
+        'Manufacturer and shipper information',
+        'Prior Notice confirmation number',
+        'Anticipated arrival information',
+      ],
+      learnMoreUrl: 'https://www.fda.gov/food/importing-food-products-united-states/prior-notice-imported-foods',
+    },
+    FD2: {
+      name: 'FDA Medical Device Registration',
+      criticality: 'required',
+      description: 'Medical devices require FDA establishment registration and device listing before import.',
+      agency: 'FDA',
+      mustInclude: [
+        'FDA establishment registration number',
+        'Device listing number',
+        '510(k) clearance or PMA approval number (Class II/III)',
+        'Labeling in English',
+      ],
+      learnMoreUrl: 'https://www.fda.gov/medical-devices/how-study-and-market-your-device/device-registration-and-listing',
+    },
+    FD3: {
+      name: 'FDA Drug Import Documentation',
+      criticality: 'required',
+      description: 'Drug products require FDA establishment registration, drug listing, and applicable approvals.',
+      agency: 'FDA',
+      mustInclude: [
+        'FDA drug establishment registration',
+        'Drug listing with National Drug Code (NDC)',
+        'NDA/ANDA approval (if applicable)',
+        'Current Good Manufacturing Practice (cGMP) compliance',
+      ],
+      learnMoreUrl: 'https://www.fda.gov/drugs/drug-imports-exports',
+    },
+    FD4: {
+      name: 'FDA Cosmetics Compliance',
+      criticality: 'required',
+      description: 'Cosmetic products must comply with FDA labeling and safety requirements.',
+      agency: 'FDA',
+      mustInclude: [
+        'Product ingredient list (INCI names)',
+        'English-language labeling',
+        'No banned color additives',
+        'Facility registration (voluntary but recommended)',
+      ],
+      learnMoreUrl: 'https://www.fda.gov/cosmetics/cosmetics-guidance-regulation',
+    },
+    FD5: {
+      name: 'FDA Radiation Performance Standard Report',
+      criticality: 'required',
+      description: 'Products that emit radiation (lasers, microwaves, monitors) require compliance with FDA performance standards.',
+      agency: 'FDA',
+      mustInclude: [
+        'Accession number from FDA',
+        'Radiation performance standard test report',
+        'Product labeling with safety information',
+      ],
+      learnMoreUrl: 'https://www.fda.gov/radiation-emitting-products/importing-and-exporting-electronic-products',
+    },
+    EP1: {
+      name: 'EPA Pesticide Registration',
+      criticality: 'required',
+      description: 'Pesticides require EPA registration and Notice of Arrival before import under FIFRA.',
+      agency: 'EPA',
+      mustInclude: [
+        'EPA registration number',
+        'Foreign producer establishment number',
+        'Notice of Arrival to EPA',
+        'English-language labeling',
+      ],
+      learnMoreUrl: 'https://www.epa.gov/pesticide-registration/importing-pesticides',
+    },
+    EP2: {
+      name: 'TSCA Import Certification',
+      criticality: 'required',
+      description: 'Chemical substances require TSCA certification at import — either positive or negative certification.',
+      agency: 'EPA',
+      mustInclude: [
+        'TSCA import certification statement',
+        'CAS number for chemical substance',
+        'Confirmation on TSCA Inventory (or exempt)',
+      ],
+      learnMoreUrl: 'https://www.epa.gov/tsca-import-export',
+    },
+    EP3: {
+      name: 'EPA Vehicle/Engine Emissions Certificate',
+      criticality: 'required',
+      description: 'Vehicles and engines must meet EPA emission standards. Certificate of conformity required.',
+      agency: 'EPA',
+      mustInclude: [
+        'EPA certificate of conformity',
+        'Emissions test results',
+        'Import Code/ICI form (EPA 3520-1)',
+      ],
+      learnMoreUrl: 'https://www.epa.gov/importing-vehicles-and-engines',
+    },
+    AQ1: {
+      name: 'Phytosanitary Certificate',
+      criticality: 'required',
+      description: 'Plants and plant products require a phytosanitary certificate from the origin country NPPO.',
+      agency: 'USDA/APHIS',
+      mustInclude: [
+        'Phytosanitary certificate from origin country',
+        'APHIS import permit (if required)',
+        'Treatment certification (if applicable)',
+      ],
+      learnMoreUrl: 'https://www.aphis.usda.gov/aphis/ourfocus/importexport',
+    },
+    AQ3: {
+      name: 'Lacey Act Declaration',
+      criticality: 'required',
+      description: 'Wood and plant products require a Lacey Act declaration identifying species and country of harvest.',
+      agency: 'USDA/APHIS',
+      mustInclude: [
+        'Scientific name of species (genus + species)',
+        'Country of harvest',
+        'Quantity and unit of measure',
+        'Value of the plant/plant product',
+      ],
+      learnMoreUrl: 'https://www.aphis.usda.gov/aphis/ourfocus/planthealth/import-information/lacey-act',
+    },
+    DT1: {
+      name: 'DOT/NHTSA Motor Vehicle Import Compliance',
+      criticality: 'required',
+      description: 'Motor vehicles must comply with Federal Motor Vehicle Safety Standards (FMVSS).',
+      agency: 'DOT/NHTSA',
+      mustInclude: [
+        'HS-7 Declaration Form (DOT)',
+        'FMVSS compliance certification',
+        'VIN documentation',
+      ],
+      learnMoreUrl: 'https://www.nhtsa.gov/importing-vehicle',
+    },
+    AT1: {
+      name: 'ATF Import Permit',
+      criticality: 'required',
+      description: 'Firearms and ammunition require ATF Form 6 import permit before shipment.',
+      agency: 'ATF',
+      mustInclude: [
+        'ATF Form 6 (approved)',
+        'Federal Firearms License (FFL) number',
+        'Detailed description of items',
+      ],
+      learnMoreUrl: 'https://www.atf.gov/firearms/import-firearms-ammunition-and-implements-war',
+    },
+  };
+
+  if (pgaDocMap[flagCode]) {
+    return pgaDocMap[flagCode];
+  }
+
+  // Fallback: generate a generic doc requirement from the flag name
+  return {
+    name: `${flagName} Compliance Documentation`,
+    criticality: 'required',
+    description: `Compliance documentation required by ${agencyCode} for this product category.`,
+    agency: agencyCode,
+  };
+}
+
+/**
  * Step 6: Identify optimization opportunities
+ * 
+ * Synthesizes data from ALL prior steps to generate actionable recommendations:
+ * - Classification confidence & alternatives → classification review / tariff engineering
+ * - Landed cost tariff layers → identifies biggest cost drivers
+ * - Country comparison → country switch opportunities with data-driven tradeoffs
+ * - Compliance alerts → Section 232 exclusion, AD/CVD mitigation, FTA qualification
  */
 async function getOptimizationOpportunities(
   input: AnalyzeProductInput,
-  htsCode: string,
+  classification: Classification,
   landedCost: LandedCost,
-  countryComparison: CountryComparison
+  countryComparison: CountryComparison,
+  compliance: Compliance
 ): Promise<Optimization> {
-  const opportunities = [];
+  const opportunities: OptimizationOpportunity[] = [];
+  const currentCountryName = getCountryName(input.countryCode);
+  const currentTotal = landedCost.total;
   
-  // Country switch opportunity
+  // Helper: calculate savings percentage relative to current landed cost
+  const savingsPercent = (savings: number): number =>
+    currentTotal > 0 ? Math.round((savings / currentTotal) * 100) : 0;
+
+  // Minimum savings threshold: 2% of landed cost or $500, whichever is greater
+  const MIN_SAVINGS_THRESHOLD = Math.max(currentTotal * 0.02, 500);
+
+  // ─── 1. Country Switch (from country comparison data) ───────────────
   const topAlternative = countryComparison.alternatives[0];
-  if (topAlternative && topAlternative.savings > 1000) {
+  if (topAlternative && topAlternative.savings > MIN_SAVINGS_THRESHOLD) {
+    // Build data-driven tradeoffs from the country comparison data we already have
+    const tradeoffs: string[] = [];
+    const currentTransit = countryComparison.current.transitDays;
+    const altTransit = topAlternative.transitDays;
+    if (currentTransit && altTransit) {
+      if (altTransit > currentTransit) {
+        tradeoffs.push(`Longer transit time: ~${altTransit} days vs ~${currentTransit} days currently`);
+      } else if (altTransit < currentTransit) {
+        tradeoffs.push(`Faster transit: ~${altTransit} days vs ~${currentTransit} days currently`);
+      }
+    }
+    if (topAlternative.dataQuality === 'low') {
+      tradeoffs.push('Cost estimate based on tariff rates only — verify with supplier quotes');
+    }
+    if ((topAlternative.supplierCount ?? 0) === 0) {
+      tradeoffs.push('No verified suppliers in our database — sourcing research needed');
+    } else if ((topAlternative.supplierCount ?? 0) < 5) {
+      tradeoffs.push(`Limited supplier base (${topAlternative.supplierCount} known suppliers)`);
+    }
+    if (topAlternative.costTrend === 'rising') {
+      tradeoffs.push('Import costs trending upward for this country — savings may decrease');
+    }
+    if (tradeoffs.length === 0) {
+      tradeoffs.push('Verify product quality standards with new suppliers');
+    }
+
     opportunities.push({
       id: 'country-switch',
-      title: `Switch from ${input.countryCode} to ${topAlternative.countryCode}`,
-      type: 'country_switch' as const,
+      title: `Source from ${topAlternative.countryName} instead of ${currentCountryName}`,
+      type: 'country_switch',
       savings: topAlternative.savings,
-      description: `Reduce landed cost from $${landedCost.total.toLocaleString('en-US')} to $${topAlternative.landedCost.toLocaleString('en-US')}`,
-      tradeoffs: [
-        'Lead time may vary',
-        'Supplier availability to be verified',
-        'Quality verification recommended',
-      ],
+      savingsPercent: savingsPercent(topAlternative.savings),
+      description: `Switching sourcing from ${currentCountryName} to ${topAlternative.countryName} could reduce your landed cost from $${currentTotal.toLocaleString('en-US', { maximumFractionDigits: 0 })} to $${topAlternative.landedCost.toLocaleString('en-US', { maximumFractionDigits: 0 })} — a ${savingsPercent(topAlternative.savings)}% reduction on this shipment.`,
+      tradeoffs,
+      actionLabel: 'Compare Countries',
+      actionUrl: '/dashboard/sourcing',
+      difficulty: 'hard',
+      priority: 'high',
+      relatedSection: 'countryComparison',
     });
   }
+
+  // ─── 2. FTA Qualification (de-duplicated from country switch) ───────
+  // Find best FTA country that isn't already the country_switch recommendation
+  const ftaCountry = countryComparison.alternatives.find(
+    (c) => c.ftaAvailable && c.savings > 0 && c.countryCode !== topAlternative?.countryCode
+  );
+  // Also check if the top alternative itself is an FTA country (avoid separate entry)
+  const topAltIsFta = topAlternative?.ftaAvailable && topAlternative.savings > MIN_SAVINGS_THRESHOLD;
   
-  // FTA qualification opportunity
-  const ftaCountry = countryComparison.alternatives.find((c) => c.ftaAvailable);
-  if (ftaCountry && ftaCountry.savings > 0) {
+  if (ftaCountry && ftaCountry.savings > MIN_SAVINGS_THRESHOLD) {
+    const ftaLabel = ftaCountry.ftaName || 'US Free Trade Agreement';
     opportunities.push({
       id: 'fta-qualification',
-      title: `Qualify for FTA (${ftaCountry.countryName})`,
-      type: 'fta_qualification' as const,
+      title: `Qualify for ${ftaLabel} via ${ftaCountry.countryName}`,
+      type: 'fta_qualification',
       savings: ftaCountry.savings,
-      description: `Source from ${ftaCountry.countryName} and qualify for duty-free entry`,
+      savingsPercent: savingsPercent(ftaCountry.savings),
+      description: `Sourcing from ${ftaCountry.countryName} under ${ftaLabel} could eliminate the base MFN duty. Note: IEEPA tariffs still apply to most FTA partners.`,
       requirements: [
-        'Product must meet FTA rules of origin',
-        'Supplier must provide certificate of origin',
-        'Documentation and recordkeeping required',
+        `Product must meet ${ftaLabel} rules of origin (tariff shift or regional value content)`,
+        'Supplier must provide a valid certificate of origin',
+        'Maintain recordkeeping for 5 years per CBP requirements',
       ],
+      tradeoffs: ftaCountry.costTrend === 'rising'
+        ? ['Import costs from this country are trending upward']
+        : undefined,
+      actionLabel: 'Open FTA Calculator',
+      actionUrl: `/dashboard/compliance/fta-calculator?htsCode=${classification.htsCode.replace(/\./g, '')}`,
+      difficulty: 'medium',
+      priority: 'high',
+      relatedSection: 'countryComparison',
+    });
+  } else if (topAltIsFta && topAlternative) {
+    // Top alternative IS the FTA country — add a note about FTA qualification to the existing entry
+    // but don't create a separate opportunity (avoids double-counting)
+    const existing = opportunities.find(o => o.id === 'country-switch');
+    if (existing && topAlternative.ftaName) {
+      existing.requirements = [
+        ...(existing.requirements || []),
+        `May qualify for ${topAlternative.ftaName} — use FTA Calculator to verify rules of origin`,
+      ];
+    }
+  }
+
+  // ─── 3. Classification Review (when alternatives have lower duty) ───
+  if (classification.alternatives.length > 0 && classification.confidence < 85) {
+    // Check if any alternative has a materially lower duty rate
+    const currentRate = landedCost.duties.effectiveRate;
+    const lowerDutyAlts = classification.alternatives.filter(alt => {
+      const altRateStr = alt.dutyRate;
+      const altRateMatch = altRateStr.match(/(\d+(\.\d+)?)/);
+      if (!altRateMatch) return false;
+      const altMfn = parseFloat(altRateMatch[1]);
+      // Alternative MFN rate is materially lower (>3pp difference)
+      return altMfn < (classification.baseMfnRate ?? currentRate) - 3;
+    });
+
+    if (lowerDutyAlts.length > 0) {
+      const bestAlt = lowerDutyAlts[0];
+      const altRateMatch = bestAlt.dutyRate.match(/(\d+(\.\d+)?)/);
+      const altMfnRate = altRateMatch ? parseFloat(altRateMatch[1]) : 0;
+      const rateDiff = (classification.baseMfnRate ?? currentRate) - altMfnRate;
+      const estimatedSavings = Math.round(landedCost.dutiableValue * (rateDiff / 100));
+
+      if (estimatedSavings > 100) {
+        opportunities.push({
+          id: 'classification-review',
+          title: 'Review HTS Classification',
+          type: 'classification_review',
+          savings: estimatedSavings,
+          savingsPercent: savingsPercent(estimatedSavings),
+          description: `Classification confidence is ${classification.confidence}%. Alternative code ${bestAlt.code} (${bestAlt.description}) has a lower base duty rate of ${bestAlt.dutyRate} vs ${classification.baseMfnRate ?? currentRate}%. A customs ruling could confirm the correct classification.`,
+          requirements: [
+            'Consult with a licensed customs broker for binding ruling',
+            'Consider filing CBP Binding Ruling request (Form 177)',
+            'Review product specifications against HTS chapter notes',
+          ],
+          tradeoffs: [
+            'Binding ruling process takes 30-90 days',
+            'Incorrect reclassification carries penalty risk',
+          ],
+          actionLabel: 'View Alternatives',
+          difficulty: 'medium',
+          priority: classification.confidence < 70 ? 'high' : 'medium',
+          relatedSection: 'classification',
+        });
+      }
+    }
+  }
+
+  // ─── 4. Section 232 Exclusion Filing ────────────────────────────────
+  const has232 = compliance.alerts.some(
+    a => a.category === 'tariff_program' && a.title.includes('Section 232')
+  );
+  if (has232) {
+    const s232Layer = landedCost.duties.layers.find(l => l.programType === 'section_232');
+    const s232Amount = s232Layer?.amount ?? Math.round(landedCost.dutiableValue * 0.25);
+
+    opportunities.push({
+      id: 'section-232-exclusion',
+      title: 'File Section 232 Exclusion Request',
+      type: 'section_232_exclusion',
+      savings: s232Amount,
+      savingsPercent: savingsPercent(s232Amount),
+      description: `This product is subject to a 25% Section 232 tariff ($${s232Amount.toLocaleString('en-US')} on this shipment). The Commerce Department allows product-specific exclusion requests if the product is not available domestically.`,
+      requirements: [
+        'File exclusion request via Commerce Department portal (BIS-232)',
+        'Demonstrate product is not available from domestic sources',
+        'Provide detailed product specifications and end-use information',
+        'Exclusion process takes 90-120 days on average',
+      ],
+      tradeoffs: [
+        'Application fee and compliance costs',
+        'Exclusions are time-limited (typically 1 year) and must be renewed',
+        'No guarantee of approval — success rate varies by product',
+      ],
+      actionLabel: 'Commerce 232 Portal',
+      actionUrl: 'https://www.commerce.gov/section-232-investigations',
+      difficulty: 'hard',
+      priority: 'medium',
     });
   }
-  
+
+  // ─── 5. AD/CVD Mitigation ──────────────────────────────────────────
+  if (compliance.adcvdWarning?.isCountryAffected) {
+    const adcvdAlert = compliance.alerts.find(a => a.category === 'adcvd' && a.level === 'high');
+    // Find an alternative country without AD/CVD exposure
+    const adcvdFreeAlternative = countryComparison.alternatives.find(
+      alt => !compliance.adcvdWarning?.affectedCountries.includes(alt.countryCode) && alt.savings > 0
+    );
+
+    if (adcvdFreeAlternative) {
+      opportunities.push({
+        id: 'adcvd-mitigation',
+        title: `Avoid AD/CVD Duties — Source from ${adcvdFreeAlternative.countryName}`,
+        type: 'adcvd_mitigation',
+        savings: adcvdFreeAlternative.savings,
+        savingsPercent: savingsPercent(adcvdFreeAlternative.savings),
+        description: `${compliance.adcvdWarning.productCategory} from ${currentCountryName} is subject to AD/CVD duties${compliance.adcvdWarning.dutyRange ? ` (${compliance.adcvdWarning.dutyRange})` : ''}. ${adcvdFreeAlternative.countryName} is not subject to these orders.`,
+        requirements: [
+          'Verify the alternative country is not subject to any AD/CVD orders for this product',
+          'Ensure no transshipment concerns (goods must be substantially transformed)',
+        ],
+        actionLabel: 'AD/CVD Lookup',
+        actionUrl: `/dashboard/compliance/addcvd?htsCode=${classification.htsCode.replace(/\./g, '')}`,
+        difficulty: 'hard',
+        priority: 'high',
+        relatedSection: 'compliance',
+      });
+    }
+  }
+
+  // ─── 6. High Tariff Exposure Alert (actionable summary) ────────────
+  const effectiveRate = landedCost.duties.effectiveRate;
+  if (effectiveRate > 50 && opportunities.length === 0) {
+    // Only show this if no other opportunities were found — otherwise it's redundant
+    const biggestLayer = [...landedCost.duties.layers]
+      .filter(l => l.rate > 0)
+      .sort((a, b) => b.amount - a.amount)[0];
+
+    opportunities.push({
+      id: 'high-tariff-alert',
+      title: `High Tariff Exposure — ${effectiveRate.toFixed(1)}% Effective Rate`,
+      type: 'high_tariff_alert',
+      savings: 0,
+      description: `Your combined duty rate of ${effectiveRate.toFixed(1)}% significantly impacts margins.${biggestLayer ? ` The largest component is ${biggestLayer.name} at ${biggestLayer.rate}%.` : ''} Consider exploring alternative sourcing countries or classification review.`,
+      actionLabel: 'Explore Alternatives',
+      actionUrl: '/dashboard/sourcing',
+      difficulty: 'medium',
+      priority: 'high',
+      relatedSection: 'landedCost',
+    });
+  }
+
+  // ─── 7. Duty Drawback (if product may be re-exported) ─────────────
+  // Surface this as a low-priority opportunity for high-duty products
+  if (effectiveRate > 30 && landedCost.duties.total > 5000) {
+    opportunities.push({
+      id: 'duty-drawback',
+      title: 'Duty Drawback Eligibility',
+      type: 'duty_drawback',
+      savings: Math.round(landedCost.duties.total * 0.99), // 99% drawback for direct substitution
+      savingsPercent: savingsPercent(Math.round(landedCost.duties.total * 0.99)),
+      description: `If these goods (or substituted goods) are re-exported or destroyed, you may recover up to 99% of duties paid ($${Math.round(landedCost.duties.total * 0.99).toLocaleString('en-US')}). Applies to manufacturing drawback, unused merchandise, and rejected goods.`,
+      requirements: [
+        'Must re-export or destroy goods within 5 years of import',
+        'File drawback claim with CBP (Form 7551)',
+        'Maintain detailed import/export recordkeeping',
+        'Consider working with a drawback specialist or customs broker',
+      ],
+      tradeoffs: [
+        'Only applicable if goods are re-exported — not relevant for domestic sale',
+        'Administrative overhead for tracking and filing claims',
+      ],
+      actionLabel: 'CBP Drawback Info',
+      actionUrl: 'https://www.cbp.gov/trade/programs-administration/entry-summary/duty-drawback',
+      difficulty: 'hard',
+      priority: 'low',
+    });
+  }
+
+  // ─── Sort by priority then savings ─────────────────────────────────
+  const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
+  opportunities.sort((a, b) => {
+    const pa = PRIORITY_ORDER[a.priority ?? 'medium'];
+    const pb = PRIORITY_ORDER[b.priority ?? 'medium'];
+    if (pa !== pb) return pa - pb;
+    return b.savings - a.savings;
+  });
+
+  // ─── De-duplicated total savings ───────────────────────────────────
+  // Country switch and FTA qualification may overlap (FTA country could be same region).
+  // Duty drawback only applies to re-export, so exclude from total.
+  // Section 232 exclusion and country switch overlap (both reduce same cost).
+  // Take the max of overlapping opportunities, not the sum.
+  const countrySwitchSavings = opportunities.find(o => o.type === 'country_switch')?.savings ?? 0;
+  const ftaSavings = opportunities.find(o => o.type === 'fta_qualification')?.savings ?? 0;
+  const classReviewSavings = opportunities.find(o => o.type === 'classification_review')?.savings ?? 0;
+  const s232Savings = opportunities.find(o => o.type === 'section_232_exclusion')?.savings ?? 0;
+  const adcvdSavings = opportunities.find(o => o.type === 'adcvd_mitigation')?.savings ?? 0;
+
+  // Country switch, FTA, and AD/CVD are mutually exclusive sourcing strategies — take the max
+  const sourcingSavings = Math.max(countrySwitchSavings, ftaSavings, adcvdSavings);
+  // Classification review is independent (changes the rate for any country)
+  // Section 232 exclusion is additive with sourcing switch (eliminates a layer)
+  const totalPotentialSavings = sourcingSavings + classReviewSavings + s232Savings;
+
+  const topOpp = opportunities[0];
+  const topRecommendation = topOpp
+    ? topOpp.savings > 0
+      ? `${topOpp.title} — save $${topOpp.savings.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+      : topOpp.title
+    : 'Your current import strategy appears cost-optimal';
+
   return {
     opportunities,
-    totalPotentialSavings: opportunities.reduce((sum, opp) => sum + opp.savings, 0),
-    topRecommendation: opportunities[0]?.title || 'No optimization opportunities identified',
+    totalPotentialSavings,
+    topRecommendation,
   };
 }
 

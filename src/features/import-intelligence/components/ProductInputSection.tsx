@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
-import { Card, Form, Input, Select, InputNumber, Checkbox, Button, Typography, Tooltip } from 'antd';
+import React, { useRef, useState, useEffect } from 'react';
+import { Card, Form, Input, Select, InputNumber, Checkbox, Button, Typography, Tooltip, message } from 'antd';
 import { FileText, Save, Hash, ChevronRight, HelpCircle } from 'lucide-react';
 import { COUNTRIES } from '@/components/shared/constants';
 import type { ProductInput, ProductAttributes } from '../types';
@@ -10,6 +10,15 @@ const { TextArea } = Input;
 const { Title, Text } = Typography;
 const INPUT_DEBOUNCE_MS = 300;
 const MAX_DESCRIPTION_LENGTH = 2000;
+/** Matches 6-10 digit HTS codes, optionally dot-separated */
+const HTS_CODE_REGEX = /^(\d{4}\.?\d{2}\.?\d{0,2}\.?\d{0,2})$/;
+
+interface SavedProduct {
+  id: string;
+  productDescription: string;
+  htsCode: string | null;
+  countryOfOrigin: string | null;
+}
 
 interface ProductInputSectionProps {
   onAnalyze: (input: ProductInput) => void;
@@ -24,6 +33,8 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
 }) => {
   const [form] = Form.useForm();
   const [inputMode, setInputMode] = useState<InputMode>('describe');
+  const [savedProducts, setSavedProducts] = useState<SavedProduct[]>([]);
+  const [savedProductsLoading, setSavedProductsLoading] = useState(false);
   const lastActionRef = useRef<number>(0);
   const inputModeOptions = [
     { value: 'describe' as const, label: 'Describe my product', icon: FileText },
@@ -31,7 +42,29 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
     { value: 'saved' as const, label: 'Use saved product', icon: Save },
   ];
 
-  const handleSubmit = async (values: any) => {
+  // Fetch saved products when "saved" mode is selected
+  useEffect(() => {
+    if (inputMode !== 'saved' || savedProducts.length > 0) return;
+    let cancelled = false;
+    const fetchSaved = async () => {
+      setSavedProductsLoading(true);
+      try {
+        const res = await fetch('/api/saved-products?limit=50');
+        const data = await res.json();
+        if (!cancelled && data.success && data.products) {
+          setSavedProducts(data.products);
+        }
+      } catch (error) {
+        console.error('[ProductInputSection] failed to load saved products', error);
+      } finally {
+        if (!cancelled) setSavedProductsLoading(false);
+      }
+    };
+    fetchSaved();
+    return () => { cancelled = true; };
+  }, [inputMode, savedProducts.length]);
+
+  const handleSubmit = async (values: Record<string, unknown>) => {
     const now = Date.now();
     if (now - lastActionRef.current < INPUT_DEBOUNCE_MS) {
       return;
@@ -39,29 +72,46 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
     lastActionRef.current = now;
 
     try {
+      // For saved product mode, resolve the product's description/HTS
+      let description = values.description as string | undefined;
+      let htsCode = values.htsCode as string | undefined;
+
+      if (inputMode === 'saved' && values.savedProductId) {
+        const product = savedProducts.find(p => p.id === values.savedProductId);
+        if (product) {
+          description = product.productDescription;
+          htsCode = product.htsCode || undefined;
+        }
+      }
+
+      // Strip dots from HTS code for API
+      if (htsCode) {
+        htsCode = htsCode.replace(/\./g, '');
+      }
+
       const productInput: ProductInput = {
-        description: values.description,
-        htsCode: values.htsCode,
-        countryCode: values.countryCode,
-        value: values.value,
-        quantity: values.quantity,
+        description,
+        htsCode,
+        countryCode: values.countryCode as string,
+        value: values.value as number,
+        quantity: values.quantity as number,
         attributes: {
-          containsBattery: values.containsBattery || false,
-          containsChemicals: values.containsChemicals || false,
-          forChildren: values.forChildren || false,
-          foodContact: values.foodContact || false,
-          wireless: values.wireless || false,
-          medicalDevice: values.medicalDevice || false,
-          pressurized: values.pressurized || false,
-          flammable: values.flammable || false,
+          containsBattery: (values.containsBattery as boolean) || false,
+          containsChemicals: (values.containsChemicals as boolean) || false,
+          forChildren: (values.forChildren as boolean) || false,
+          foodContact: (values.foodContact as boolean) || false,
+          wireless: (values.wireless as boolean) || false,
+          medicalDevice: (values.medicalDevice as boolean) || false,
+          pressurized: (values.pressurized as boolean) || false,
+          flammable: (values.flammable as boolean) || false,
         },
       };
       console.info('[import_intelligence] analyze', {
         ts: new Date().toISOString(),
         inputMode,
         countryCode: values.countryCode,
-        hasDescription: Boolean(values.description),
-        hasHtsCode: Boolean(values.htsCode),
+        hasDescription: Boolean(description),
+        hasHtsCode: Boolean(htsCode),
       });
       onAnalyze(productInput);
     } catch (error) {
@@ -151,12 +201,24 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
                 <Form.Item
                   name="htsCode"
                   label={<span className="text-slate-700 font-medium">HTS Code</span>}
-                  rules={[{ required: true, message: 'Please enter an HTS code' }]}
+                  rules={[
+                    { required: true, message: 'Please enter an HTS code' },
+                    {
+                      validator: (_, value) => {
+                        if (!value) return Promise.resolve();
+                        const clean = value.replace(/\./g, '');
+                        if (!/^\d{6,10}$/.test(clean)) {
+                          return Promise.reject('Enter a 6-10 digit numeric HTS code (e.g., 6109.10.00.12)');
+                        }
+                        return Promise.resolve();
+                      },
+                    },
+                  ]}
                 >
                   <Input
                     placeholder="e.g., 6109.10.00.12"
                     size="large"
-                    maxLength={10}
+                    maxLength={14}
                   />
                 </Form.Item>
               )}
@@ -168,25 +230,44 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
                   rules={[{ required: true, message: 'Please select a saved product' }]}
                 >
                   <Select
-                    placeholder="Choose from your saved products"
+                    placeholder={savedProductsLoading ? 'Loading products...' : savedProducts.length === 0 ? 'No saved products — classify a product first' : 'Choose from your saved products'}
                     size="large"
-                    options={[
-                      { value: '1', label: 'Cotton T-Shirts (6109.10.00.12)' },
-                      { value: '2', label: 'Wireless Earbuds (8518.30.20.00)' },
-                    ]}
+                    loading={savedProductsLoading}
+                    showSearch
+                    filterOption={(input, option) =>
+                      (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                    }
+                    options={savedProducts.map(p => ({
+                      value: p.id,
+                      label: `${p.productDescription}${p.htsCode ? ` (${p.htsCode})` : ''}`,
+                    }))}
+                    onChange={(productId) => {
+                      const product = savedProducts.find(p => p.id === productId);
+                      if (product) {
+                        // Auto-fill country from saved product
+                        if (product.countryOfOrigin) {
+                          form.setFieldValue('countryCode', product.countryOfOrigin);
+                        }
+                        // Store the HTS code so handleSubmit can use it
+                        if (product.htsCode) {
+                          form.setFieldValue('htsCode', product.htsCode);
+                        }
+                      }
+                    }}
                   />
                 </Form.Item>
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Origin → Destination */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Form.Item
                 name="countryCode"
-                label={<span className="text-slate-700 font-medium"><span className="text-red-500">*</span> Country of Origin</span>}
+                label={<span className="text-slate-700 font-medium"><span className="text-red-500">*</span> Country of Origin / Manufacturing</span>}
                 rules={[{ required: true, message: 'Required' }]}
               >
                 <Select
-                  placeholder="Select country"
+                  placeholder="Where is this product made?"
                   size="large"
                   showSearch
                   options={COUNTRIES.map((c) => ({ value: c.value, label: c.label }))}
@@ -196,6 +277,20 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
                 />
               </Form.Item>
 
+              <Form.Item
+                label={<span className="text-slate-700 font-medium">Destination Country</span>}
+              >
+                <Select
+                  value="US"
+                  size="large"
+                  disabled
+                  options={[{ value: 'US', label: '🇺🇸 United States' }]}
+                />
+              </Form.Item>
+            </div>
+
+            {/* Value & Quantity */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Form.Item
                 name="value"
                 label={
@@ -257,6 +352,12 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
                 </Form.Item>
                 <Form.Item name="medicalDevice" valuePropName="checked" className="!mb-0">
                   <Checkbox className="tarifyx-checkbox">Medical device</Checkbox>
+                </Form.Item>
+                <Form.Item name="pressurized" valuePropName="checked" className="!mb-0">
+                  <Checkbox className="tarifyx-checkbox">Pressurized / aerosol</Checkbox>
+                </Form.Item>
+                <Form.Item name="flammable" valuePropName="checked" className="!mb-0">
+                  <Checkbox className="tarifyx-checkbox">Flammable materials</Checkbox>
                 </Form.Item>
               </div>
             </div>

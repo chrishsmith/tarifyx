@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { 
     Card, 
     Input, 
@@ -91,8 +92,9 @@ interface APIResponse {
 }
 
 export const ADCVDLookup: React.FC = () => {
-    const [htsCode, setHtsCode] = useState('');
-    const [countryCode, setCountryCode] = useState<string | undefined>();
+    const searchParams = useSearchParams();
+    const [htsCode, setHtsCode] = useState(searchParams.get('htsCode') || '');
+    const [countryCode, setCountryCode] = useState<string | undefined>(searchParams.get('countryCode') || undefined);
     const [searchTerm, setSearchTerm] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);

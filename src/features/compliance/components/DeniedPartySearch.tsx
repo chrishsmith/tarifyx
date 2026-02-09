@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
     Card,
     Input,
@@ -213,9 +214,10 @@ interface BatchScreeningResponse {
 type BatchStage = 'idle' | 'preview' | 'processing' | 'complete';
 
 export const DeniedPartySearch: React.FC = () => {
-    // Search state
+    const searchParams = useSearchParams();
+    // Search state — pre-fill from URL params when navigating from Import Intelligence
     const [searchQuery, setSearchQuery] = useState('');
-    const [countryFilter, setCountryFilter] = useState<string | null>(null);
+    const [countryFilter, setCountryFilter] = useState<string | null>(searchParams.get('countryCode') || null);
     const [entityTypeFilter, setEntityTypeFilter] = useState<string | null>(null);
     const [sourceListFilter, setSourceListFilter] = useState<string | null>(null);
     
@@ -296,9 +298,10 @@ export const DeniedPartySearch: React.FC = () => {
         }
     }, [messageApi]);
     
-    // Load initial data on mount
+    // Load initial data on mount — use pre-filled filters from URL params
+    const initialCountry = searchParams.get('countryCode') || null;
     useEffect(() => {
-        fetchResults('', 1, pageSize, null, null, null);
+        fetchResults('', 1, pageSize, initialCountry, null, null);
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
     
     // Handle search with debounce
