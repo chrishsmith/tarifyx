@@ -26,7 +26,7 @@ export async function GET(
 
         if (!session?.user?.id) {
             return NextResponse.json(
-                { error: 'Unauthorized' },
+                { success: false, error: 'Unauthorized' },
                 { status: 401 }
             );
         }
@@ -36,7 +36,7 @@ export async function GET(
 
         if (!product) {
             return NextResponse.json(
-                { error: 'Product not found' },
+                { success: false, error: 'Product not found' },
                 { status: 404 }
             );
         }
@@ -45,7 +45,7 @@ export async function GET(
     } catch (error) {
         console.error('[API] Get saved product error:', error);
         return NextResponse.json(
-            { error: 'Failed to fetch product' },
+            { success: false, error: 'Failed to fetch product' },
             { status: 500 }
         );
     }
@@ -63,7 +63,7 @@ export async function PATCH(
 
         if (!session?.user?.id) {
             return NextResponse.json(
-                { error: 'Unauthorized' },
+                { success: false, error: 'Unauthorized' },
                 { status: 401 }
             );
         }
@@ -79,7 +79,7 @@ export async function PATCH(
 
         if (!success) {
             return NextResponse.json(
-                { error: 'Product not found' },
+                { success: false, error: 'Product not found' },
                 { status: 404 }
             );
         }
@@ -88,7 +88,7 @@ export async function PATCH(
     } catch (error) {
         console.error('[API] Update saved product error:', error);
         return NextResponse.json(
-            { error: 'Failed to update product' },
+            { success: false, error: 'Failed to update product' },
             { status: 500 }
         );
     }
@@ -106,7 +106,7 @@ export async function DELETE(
 
         if (!session?.user?.id) {
             return NextResponse.json(
-                { error: 'Unauthorized' },
+                { success: false, error: 'Unauthorized' },
                 { status: 401 }
             );
         }
@@ -116,7 +116,7 @@ export async function DELETE(
 
         if (!success) {
             return NextResponse.json(
-                { error: 'Product not found' },
+                { success: false, error: 'Product not found' },
                 { status: 404 }
             );
         }
@@ -125,13 +125,9 @@ export async function DELETE(
     } catch (error) {
         console.error('[API] Delete saved product error:', error);
         return NextResponse.json(
-            { error: 'Failed to delete product' },
+            { success: false, error: 'Failed to delete product' },
             { status: 500 }
         );
     }
 }
-
-
-
-
 

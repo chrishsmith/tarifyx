@@ -171,7 +171,7 @@ export const CountryComparisonDrawer: React.FC<CountryComparisonDrawerProps> = (
         return;
       }
       lastActionRef.current = now;
-      router.push(`/dashboard/sourcing?hts=${htsCode}&from=${currentCountry}`);
+      router.push(`/dashboard/intelligence/cost-map?hts=${htsCode}&from=${currentCountry}`);
       onClose();
     } catch (error) {
       console.error(`[CountryComparison] ${new Date().toISOString()} Navigation error:`, error);

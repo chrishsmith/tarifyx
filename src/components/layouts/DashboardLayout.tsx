@@ -20,6 +20,7 @@ import {
     Shield,
     BarChart3,
     BellRing,
+    Globe,
 } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSession, authClient } from '@/lib/auth-client';
@@ -110,7 +111,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                     key: '/dashboard/optimizer',
                     label: (
                         <span className="flex items-center gap-2">
-                            Country Comparison
+                            Duty Optimizer
                             {!isPro && <Crown size={12} className="text-amber-500" />}
                         </span>
                     ),
@@ -147,6 +148,13 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                     key: '/dashboard/compliance/pga',
                     label: 'PGA',
                 },
+            ],
+        },
+        {
+            key: 'tariff-intelligence',
+            icon: <Globe size={18} />,
+            label: 'Tariff Intelligence',
+            children: [
                 {
                     key: '/dashboard/compliance/tariff-tracker',
                     label: 'Tariff Tracker',
@@ -154,6 +162,14 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                 {
                     key: '/dashboard/compliance/hts-history',
                     label: 'HTS History',
+                },
+                {
+                    key: '/dashboard/intelligence/trade-stats',
+                    label: 'Trade Stats',
+                },
+                {
+                    key: '/dashboard/intelligence/cost-map',
+                    label: 'Cost Map',
                 },
             ],
         },
@@ -168,11 +184,6 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             ),
         },
         {
-            key: '/dashboard/intelligence/trade-stats',
-            icon: <BarChart3 size={18} />,
-            label: 'Trade Stats',
-        },
-        {
             type: 'divider',
         },
         {
@@ -184,12 +195,11 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
 
     // Get selected key - handle route variations and sub-menu items
     const getSelectedKey = () => {
-        // Legacy classify routes → Classify Product
+        // Legacy routes → redirects
         if (pathname.startsWith('/dashboard/classify') || pathname.startsWith('/dashboard/classifications')) {
             return '/dashboard/import/analyze';
         }
-        // Legacy monitoring → My Products
-        if (pathname.startsWith('/dashboard/monitoring')) {
+        if (pathname.startsWith('/dashboard/monitoring') || pathname.startsWith('/dashboard/sourcing')) {
             return '/dashboard/products';
         }
         // Classify Product (analyze)
@@ -197,16 +207,11 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             return '/dashboard/import/analyze';
         }
         // Landed Cost sub-items
-        if (pathname.startsWith('/dashboard/duties/calculator')) {
-            return '/dashboard/duties/calculator';
-        }
-        if (pathname.startsWith('/dashboard/optimizer')) {
-            return '/dashboard/optimizer';
-        }
-        // Trade Stats
-        if (pathname.startsWith('/dashboard/intelligence/trade-stats')) {
-            return '/dashboard/intelligence/trade-stats';
-        }
+        if (pathname.startsWith('/dashboard/duties/calculator')) return '/dashboard/duties/calculator';
+        if (pathname.startsWith('/dashboard/optimizer')) return '/dashboard/optimizer';
+        // Tariff Intelligence sub-items
+        if (pathname.startsWith('/dashboard/intelligence/trade-stats')) return '/dashboard/intelligence/trade-stats';
+        if (pathname.startsWith('/dashboard/intelligence/cost-map')) return '/dashboard/intelligence/cost-map';
         // Compliance sub-items
         if (pathname.startsWith('/dashboard/compliance/denied-party')) return '/dashboard/compliance/denied-party';
         if (pathname.startsWith('/dashboard/compliance/addcvd')) return '/dashboard/compliance/addcvd';
@@ -225,8 +230,16 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
         if (pathname.startsWith('/dashboard/duties') || pathname.startsWith('/dashboard/optimizer')) {
             keys.push('landed-cost');
         }
-        if (pathname.startsWith('/dashboard/compliance')) {
+        if (pathname.startsWith('/dashboard/compliance/denied-party') ||
+            pathname.startsWith('/dashboard/compliance/addcvd') ||
+            pathname.startsWith('/dashboard/compliance/fta') ||
+            pathname.startsWith('/dashboard/compliance/pga')) {
             keys.push('compliance');
+        }
+        if (pathname.startsWith('/dashboard/compliance/tariff-tracker') ||
+            pathname.startsWith('/dashboard/compliance/hts-history') ||
+            pathname.startsWith('/dashboard/intelligence')) {
+            keys.push('tariff-intelligence');
         }
         setOpenKeys(keys);
     }, [pathname]);
@@ -347,7 +360,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             'products': 'My Products',
             'settings': 'Settings',
             'calculator': 'Landed Cost Calculator',
-            'optimizer': 'Country Comparison',
+            'optimizer': 'Duty Optimizer',
             'denied-party': 'Denied Party Screening',
             'addcvd': 'ADD/CVD Lookup',
             'pga': 'PGA Requirements',
@@ -356,8 +369,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             'tariff-tracker': 'Section 301/IEEPA Tariff Tracker',
             'hts-history': 'HTS Code History',
             'trade-stats': 'Trade Statistics',
-            'sourcing': 'Product Sourcing',
-            'suppliers': 'Supplier Explorer',
+            'cost-map': 'Global Cost Map',
             'roadmap': 'Roadmap',
         };
         return titles[segment] || segment.replace('-', ' ');

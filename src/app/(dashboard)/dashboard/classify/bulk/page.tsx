@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 
-// Redirect to consolidated classify page with bulk tab
+// Redirect to classify page with bulk mode
 export default function BulkClassifyRedirect() {
-    redirect('/dashboard/classifications?tab=bulk');
+    redirect('/dashboard/import/analyze?mode=bulk');
 }

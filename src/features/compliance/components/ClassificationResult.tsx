@@ -269,7 +269,7 @@ export const ClassificationResultDisplay: React.FC<ClassificationResultDisplayPr
                 message.success(
                     <span>
                         Product saved with tariff monitoring! 
-                        <a href="/dashboard/sourcing?tab=monitoring" className="ml-2 text-teal-600 underline">
+                        <a href="/dashboard/products?tab=monitored" className="ml-2 text-teal-600 underline">
                             View →
                         </a>
                     </span>

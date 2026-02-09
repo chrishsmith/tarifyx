@@ -95,13 +95,13 @@ export const SourcingPreview: React.FC<SourcingPreviewProps> = ({
     const handleViewFullAnalysis = () => {
         const params = new URLSearchParams({ hts: htsCode });
         if (countryOfOrigin) params.set('from', countryOfOrigin);
-        router.push(`/dashboard/sourcing?${params.toString()}`);
+        router.push(`/dashboard/intelligence/cost-map?${params.toString()}`);
     };
 
     // Loading state
     if (loading) {
         return (
-            <Card className={`border-2 border-dashed border-indigo-200 bg-indigo-50/30 ${className}`}>
+            <Card className={`border-2 border-dashed border-teal-200 bg-teal-50/30 ${className}`}>
                 <div className="flex items-center gap-3">
                     <Skeleton.Avatar active size={40} shape="square" />
                     <div className="flex-1">
@@ -123,7 +123,7 @@ export const SourcingPreview: React.FC<SourcingPreviewProps> = ({
     // Always show the card - either with savings or as a CTA to explore
     return (
         <Card 
-            className={`border-2 border-indigo-200 bg-gradient-to-br from-indigo-50 via-purple-50 to-blue-50 shadow-sm hover:shadow-md transition-shadow cursor-pointer ${className}`}
+            className={`border-2 border-teal-200 bg-gradient-to-br from-teal-50 via-emerald-50 to-cyan-50 shadow-sm hover:shadow-md transition-shadow cursor-pointer ${className}`}
             style={{ marginBottom: 24 }}
             onClick={handleViewFullAnalysis}
         >
@@ -142,7 +142,7 @@ export const SourcingPreview: React.FC<SourcingPreviewProps> = ({
                                 </Text>
                             </div>
                         </div>
-                        <ArrowRight className="text-indigo-400" size={18} />
+                        <ArrowRight className="text-teal-400" size={18} />
                     </div>
 
                     {/* Compact Alternative Pills */}
@@ -179,11 +179,11 @@ export const SourcingPreview: React.FC<SourcingPreviewProps> = ({
                         <Button
                             type="primary"
                             size="small"
-                            className="bg-indigo-600"
-                            icon={<ArrowRight size={14} />}
-                            iconPosition="end"
-                        >
-                            Full Analysis
+                        className="bg-teal-600"
+                        icon={<ArrowRight size={14} />}
+                        iconPosition="end"
+                    >
+                        View Cost Map
                         </Button>
                     </div>
                 </>
@@ -191,25 +191,25 @@ export const SourcingPreview: React.FC<SourcingPreviewProps> = ({
                 // No data yet - show explore CTA
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-indigo-100 rounded-lg">
-                            <Search className="text-indigo-600" size={20} />
+                        <div className="p-2 bg-teal-100 rounded-lg">
+                            <Search className="text-teal-600" size={20} />
                         </div>
                         <div>
-                            <Text strong className="text-indigo-900 block">
-                                Explore Sourcing Options
+                            <Text strong className="text-teal-900 block">
+                                Explore Cost Map
                             </Text>
                             <Text type="secondary" className="text-sm">
-                                Compare costs across 20+ countries for HTS {htsCode.substring(0, 6)}
+                                Compare landed costs across 199 countries for HTS {htsCode.substring(0, 6)}
                             </Text>
                         </div>
                     </div>
                     <Button
                         type="primary"
-                        className="bg-indigo-600"
+                        className="bg-teal-600"
                         icon={<ArrowRight size={14} />}
                         iconPosition="end"
                     >
-                        Analyze
+                        View Map
                     </Button>
                 </div>
             )}

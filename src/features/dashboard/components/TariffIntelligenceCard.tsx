@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Card, Typography, Tag, Button, Skeleton, Tooltip, Badge, Progress } from 'antd';
+import { Card, Typography, Button, Skeleton, Tooltip, Progress } from 'antd';
 import {
     Bell,
     TrendingUp,
@@ -13,8 +13,24 @@ import {
     Zap,
 } from 'lucide-react';
 import Link from 'next/link';
+import { formatHtsCode } from '@/utils/htsFormatting';
 
 const { Text, Title } = Typography;
+
+/** Map ISO 3166-1 alpha-2 codes to country names */
+const COUNTRY_NAMES: Record<string, string> = {
+    CN: 'China', VN: 'Vietnam', IN: 'India', BD: 'Bangladesh', TH: 'Thailand',
+    ID: 'Indonesia', MY: 'Malaysia', PH: 'Philippines', KR: 'South Korea', JP: 'Japan',
+    TW: 'Taiwan', MX: 'Mexico', CA: 'Canada', BR: 'Brazil', DE: 'Germany',
+    IT: 'Italy', FR: 'France', GB: 'United Kingdom', ES: 'Spain', TR: 'Turkey',
+    US: 'United States', AU: 'Australia', SG: 'Singapore', HK: 'Hong Kong',
+    CO: 'Colombia', CL: 'Chile', PE: 'Peru', AR: 'Argentina', PK: 'Pakistan',
+    KH: 'Cambodia', MM: 'Myanmar', LK: 'Sri Lanka', NP: 'Nepal',
+};
+
+function getCountryName(code: string): string {
+    return COUNTRY_NAMES[code?.toUpperCase()] || code;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -137,6 +153,7 @@ export const TariffIntelligenceCard: React.FC<Props> = ({ className }) => {
             let unchanged = 0;
             let totalRate = 0;
             let rateCount = 0;
+            let alertsTriggered = 0;
             const topImpacts: TariffSummary['topImpacts'] = [];
             const tradeStatus = { elevated: 0, normal: 0, restricted: 0 };
             
@@ -147,6 +164,7 @@ export const TariffIntelligenceCard: React.FC<Props> = ({ className }) => {
                     if (change !== null) {
                         if (change > 0.1) {
                             increases++;
+                            alertsTriggered++; // Rate increase = alert
                             topImpacts.push({
                                 id: item.id,
                                 productName: item.name,
@@ -163,13 +181,23 @@ export const TariffIntelligenceCard: React.FC<Props> = ({ className }) => {
                         }
                     }
                     
+                    // Warnings (AD/CVD, compliance) also count as alerts
+                    if (item.tariffData.warnings?.length > 0) {
+                        alertsTriggered += item.tariffData.warnings.length;
+                    }
+                    
                     totalRate += item.tariffData.currentRate;
                     rateCount++;
                     
                     // Track trade status
-                    if (item.tariffData.tradeStatus === 'elevated') tradeStatus.elevated++;
-                    else if (item.tariffData.tradeStatus === 'restricted') tradeStatus.restricted++;
-                    else tradeStatus.normal++;
+                    if (item.tariffData.tradeStatus === 'elevated') {
+                        tradeStatus.elevated++;
+                    } else if (item.tariffData.tradeStatus === 'restricted') {
+                        tradeStatus.restricted++;
+                        alertsTriggered++; // Restricted status = alert
+                    } else {
+                        tradeStatus.normal++;
+                    }
                 }
             }
             
@@ -178,7 +206,7 @@ export const TariffIntelligenceCard: React.FC<Props> = ({ className }) => {
             
             setSummary({
                 monitoredProducts: data.stats?.monitoredProducts || items.length,
-                alertsTriggered: 0, // TODO: Fetch from alerts API
+                alertsTriggered,
                 rateChanges: { increases, decreases, unchanged },
                 topImpacts: topImpacts.slice(0, 3),
                 tradeStatusSummary: tradeStatus,
@@ -325,7 +353,7 @@ export const TariffIntelligenceCard: React.FC<Props> = ({ className }) => {
                                         {impact.productName}
                                     </Text>
                                     <Text type="secondary" className="text-xs">
-                                        {impact.htsCode} • {impact.countryCode}
+                                        {formatHtsCode(impact.htsCode)} • {getCountryName(impact.countryCode)}
                                     </Text>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -392,9 +420,5 @@ export const TariffIntelligenceCard: React.FC<Props> = ({ className }) => {
 };
 
 export default TariffIntelligenceCard;
-
-
-
-
 
 

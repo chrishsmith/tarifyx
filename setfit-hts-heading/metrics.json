@@ -1,0 +1,8 @@
+{
+  "accuracy": 0.5238095238095238,
+  "total_samples": 189,
+  "inference_time_ms": 0.42336832278619996,
+  "training_samples": 12000,
+  "model_name": "setfit-hts-heading",
+  "training_level": "heading"
+}

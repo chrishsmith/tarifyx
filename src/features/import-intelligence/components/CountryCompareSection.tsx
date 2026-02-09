@@ -416,40 +416,33 @@ export const CountryCompareSection: React.FC<CountryCompareSectionProps> = ({ co
               Next Steps
             </Text>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {/* Primary: Deep dive into sourcing comparison */}
+              {/* Primary: View on cost map */}
               <button
                 disabled={!hasContext}
-                onClick={() => handleNavigate(`/dashboard/sourcing?hts=${htsCode}&from=${currentCountryCode}`)}
+                onClick={() => handleNavigate(`/dashboard/intelligence/cost-map?hts=${htsCode}&from=${currentCountryCode}`)}
                 className="group text-left p-4 rounded-lg border border-slate-200 hover:border-teal-300 hover:bg-teal-50/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <div className="flex items-center gap-2 mb-1.5">
                   <BarChart3 size={16} className="text-teal-600 shrink-0" />
-                  <Text className="text-sm font-medium text-slate-900">Full comparison</Text>
+                  <Text className="text-sm font-medium text-slate-900">View cost map</Text>
                 </div>
                 <Text className="text-xs text-slate-500 leading-relaxed">
-                  Detailed cost breakdown across all sourcing countries
+                  Interactive map of landed costs across all countries
                 </Text>
               </button>
 
-              {/* Secondary: Find suppliers */}
+              {/* Secondary: Save & monitor */}
               <button
                 disabled={!hasContext}
-                onClick={() => handleNavigate(
-                  bestAlternative && bestAlternative.savings > 0
-                    ? `/dashboard/sourcing?tab=suppliers&hts=${htsCode}&from=${bestAlternative.countryCode}`
-                    : `/dashboard/sourcing?tab=suppliers&hts=${htsCode}&from=${currentCountryCode}`
-                )}
+                onClick={() => handleNavigate('/dashboard/products?tab=monitored')}
                 className="group text-left p-4 rounded-lg border border-slate-200 hover:border-teal-300 hover:bg-teal-50/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <div className="flex items-center gap-2 mb-1.5">
                   <TrendingDown size={16} className="text-teal-600 shrink-0" />
-                  <Text className="text-sm font-medium text-slate-900">Find suppliers</Text>
+                  <Text className="text-sm font-medium text-slate-900">Monitor tariffs</Text>
                 </div>
                 <Text className="text-xs text-slate-500 leading-relaxed">
-                  {bestAlternative && bestAlternative.savings > 0
-                    ? `Discover suppliers in ${bestAlternative.countryName}`
-                    : 'Browse verified suppliers by country'
-                  }
+                  Track rate changes and get alerts for this product
                 </Text>
               </button>
 

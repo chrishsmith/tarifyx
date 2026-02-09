@@ -1,18 +1,20 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Row, Col, Typography, Tag } from 'antd';
+import { Row, Col, Typography, Tag, Progress } from 'antd';
 import { LoadingState } from '@/components/shared/LoadingState';
 import {
     Sparkles,
-    Calculator,
-    Globe,
     ChevronRight,
     Clock,
-    ArrowRight,
+    Package,
+    Search,
+    Target,
+    Eye,
 } from 'lucide-react';
 import Link from 'next/link';
 import { TariffIntelligenceCard } from './TariffIntelligenceCard';
+import { formatHtsCode } from '@/utils/htsFormatting';
 
 const { Title, Text } = Typography;
 
@@ -20,74 +22,90 @@ const { Title, Text } = Typography;
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/** Matches the shape returned by /api/search-history */
 interface RecentClassification {
     id: string;
-    description: string;
-    htsCode: string | null;
-    countryCode: string | null;
+    productName: string | null;
+    productDescription: string;
+    htsCode: string;
+    countryOfOrigin: string | null;
+    confidence: number;
     createdAt: string;
-    confidence?: number;
+}
+
+interface DashboardStats {
+    totalProducts: number;
+    monitoredProducts: number;
+    totalSearches: number;
+    searchesThisMonth: number;
+    avgConfidence: number;
+    uniqueHtsCodes: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// QUICK ACTION CARDS
+// STATS ROW
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const QUICK_ACTIONS = [
-    {
-        title: 'Classify Product',
-        description: 'Get the HTS code for any product with AI',
-        icon: Sparkles,
-        href: '/dashboard/import/analyze',
-        color: 'text-teal-600',
-        bg: 'bg-teal-50',
-    },
-    {
-        title: 'Calculate Landed Cost',
-        description: 'Full tariff breakdown: MFN + 301 + IEEPA + fees',
-        icon: Calculator,
-        href: '/dashboard/duties/calculator',
-        color: 'text-amber-600',
-        bg: 'bg-amber-50',
-    },
-    {
-        title: 'Compare Countries',
-        description: 'Find the cheapest country to source from',
-        icon: Globe,
-        href: '/dashboard/optimizer',
-        color: 'text-indigo-600',
-        bg: 'bg-indigo-50',
-    },
+const STAT_CARDS = [
+    { key: 'totalProducts', label: 'Saved Products', icon: Package, color: 'text-teal-600', bg: 'bg-teal-50' },
+    { key: 'searchesThisMonth', label: 'Searches This Month', icon: Search, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { key: 'avgConfidence', label: 'Avg Confidence', icon: Target, color: 'text-emerald-600', bg: 'bg-emerald-50', suffix: '%' },
+    { key: 'monitoredProducts', label: 'Monitored', icon: Eye, color: 'text-sky-600', bg: 'bg-sky-50' },
 ] as const;
 
-const QuickActionCard: React.FC<typeof QUICK_ACTIONS[number]> = ({
-    title,
-    description,
-    icon: Icon,
-    href,
-    color,
-    bg,
-}) => (
-    <Link href={href} className="block h-full">
-        <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-6 h-full hover:shadow-md hover:border-slate-300 transition-all duration-200 group cursor-pointer">
-            <div className="flex items-start justify-between mb-4">
-                <div className={`p-3 rounded-xl ${bg}`}>
-                    <Icon size={22} className={color} />
-                </div>
-                <ArrowRight
-                    size={18}
-                    className="text-slate-300 group-hover:text-slate-500 group-hover:translate-x-0.5 transition-all"
-                />
-            </div>
-            <Title level={5} className="!mb-1 !text-slate-900">{title}</Title>
-            <Text className="text-slate-500 text-sm">{description}</Text>
-        </div>
-    </Link>
-);
+const StatsRow: React.FC<{ stats: DashboardStats | null; loading: boolean }> = ({ stats, loading }) => {
+    if (loading) {
+        return (
+            <Row gutter={[16, 16]}>
+                {STAT_CARDS.map((card) => (
+                    <Col xs={12} md={6} key={card.key}>
+                        <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-5 animate-pulse">
+                            <div className="h-4 bg-slate-100 rounded w-20 mb-3" />
+                            <div className="h-7 bg-slate-100 rounded w-12" />
+                        </div>
+                    </Col>
+                ))}
+            </Row>
+        );
+    }
+
+    return (
+        <Row gutter={[16, 16]}>
+            {STAT_CARDS.map((card) => {
+                const Icon = card.icon;
+                const value = stats ? stats[card.key] : 0;
+                return (
+                    <Col xs={12} md={6} key={card.key}>
+                        <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-5">
+                            <div className="flex items-center gap-2 mb-2">
+                                <div className={`p-1.5 rounded-lg ${card.bg}`}>
+                                    <Icon size={14} className={card.color} />
+                                </div>
+                                <Text type="secondary" className="text-xs font-medium">
+                                    {card.label}
+                                </Text>
+                            </div>
+                            <div className="text-2xl font-bold text-slate-900">
+                                {value}{'suffix' in card ? card.suffix : ''}
+                            </div>
+                        </div>
+                    </Col>
+                );
+            })}
+        </Row>
+    );
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RECENT CLASSIFICATIONS
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/** Confidence color based on threshold */
+function getConfidenceColor(confidence: number): string {
+    if (confidence >= 85) return '#10b981'; // emerald-500
+    if (confidence >= 70) return '#f59e0b'; // amber-500
+    return '#ef4444'; // red-500
+}
 
 const RecentClassificationsCard: React.FC = () => {
     const [items, setItems] = useState<RecentClassification[]>([]);
@@ -150,7 +168,7 @@ const RecentClassificationsCard: React.FC = () => {
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
                 <Title level={5} className="!m-0">Recent Classifications</Title>
                 <Link
-                    href="/dashboard/import/analyze"
+                    href="/dashboard/products"
                     className="text-sm text-teal-600 hover:text-teal-700 font-medium flex items-center gap-1"
                 >
                     View all <ChevronRight size={14} />
@@ -159,25 +177,41 @@ const RecentClassificationsCard: React.FC = () => {
 
             <div className="divide-y divide-slate-100">
                 {items.map((item) => (
-                    <div
+                    <Link
                         key={item.id}
-                        className="px-6 py-3.5 hover:bg-slate-50 transition-colors"
+                        href={`/dashboard/import/analyze`}
+                        className="block px-6 py-3.5 hover:bg-slate-50 transition-colors"
                     >
                         <div className="flex items-center justify-between">
                             <div className="flex-1 min-w-0 mr-4">
                                 <Text className="block truncate text-sm font-medium text-slate-800">
-                                    {item.description}
+                                    {item.productName || item.productDescription}
                                 </Text>
                                 <div className="flex items-center gap-2 mt-1">
                                     {item.htsCode && (
                                         <Tag className="!m-0 font-mono text-xs border-slate-200 text-slate-600">
-                                            {item.htsCode}
+                                            {formatHtsCode(item.htsCode)}
                                         </Tag>
                                     )}
-                                    {item.countryCode && (
+                                    {item.countryOfOrigin && (
                                         <Text type="secondary" className="text-xs">
-                                            {item.countryCode}
+                                            {getCountryName(item.countryOfOrigin)}
                                         </Text>
+                                    )}
+                                    {item.confidence > 0 && (
+                                        <span className="inline-flex items-center gap-1">
+                                            <Progress
+                                                type="circle"
+                                                percent={Math.round(item.confidence)}
+                                                size={16}
+                                                strokeColor={getConfidenceColor(item.confidence)}
+                                                strokeWidth={10}
+                                                format={() => ''}
+                                            />
+                                            <Text type="secondary" className="text-xs">
+                                                {Math.round(item.confidence)}%
+                                            </Text>
+                                        </span>
                                     )}
                                 </div>
                             </div>
@@ -188,7 +222,7 @@ const RecentClassificationsCard: React.FC = () => {
                                 </Text>
                             </div>
                         </div>
-                    </div>
+                    </Link>
                 ))}
             </div>
         </div>
@@ -214,11 +248,73 @@ function formatTimeAgo(dateStr: string): string {
     return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+/** Map ISO 3166-1 alpha-2 codes to country names */
+const COUNTRY_NAMES: Record<string, string> = {
+    CN: 'China', VN: 'Vietnam', IN: 'India', BD: 'Bangladesh', TH: 'Thailand',
+    ID: 'Indonesia', MY: 'Malaysia', PH: 'Philippines', KR: 'South Korea', JP: 'Japan',
+    TW: 'Taiwan', PK: 'Pakistan', KH: 'Cambodia', MM: 'Myanmar', LK: 'Sri Lanka',
+    MX: 'Mexico', CA: 'Canada', BR: 'Brazil', CO: 'Colombia', CL: 'Chile',
+    PE: 'Peru', AR: 'Argentina', GT: 'Guatemala', HN: 'Honduras', SV: 'El Salvador',
+    CR: 'Costa Rica', DO: 'Dominican Republic', NI: 'Nicaragua', PA: 'Panama',
+    DE: 'Germany', IT: 'Italy', FR: 'France', GB: 'United Kingdom', ES: 'Spain',
+    PT: 'Portugal', NL: 'Netherlands', BE: 'Belgium', PL: 'Poland', CZ: 'Czech Republic',
+    RO: 'Romania', HU: 'Hungary', AT: 'Austria', SE: 'Sweden', DK: 'Denmark',
+    FI: 'Finland', IE: 'Ireland', CH: 'Switzerland', NO: 'Norway', GR: 'Greece',
+    TR: 'Turkey', IL: 'Israel', AE: 'UAE', SA: 'Saudi Arabia', QA: 'Qatar',
+    EG: 'Egypt', ZA: 'South Africa', NG: 'Nigeria', KE: 'Kenya', ET: 'Ethiopia',
+    GH: 'Ghana', TZ: 'Tanzania', MA: 'Morocco', TN: 'Tunisia',
+    AU: 'Australia', NZ: 'New Zealand', SG: 'Singapore', HK: 'Hong Kong',
+    US: 'United States', PR: 'Puerto Rico', JO: 'Jordan', LB: 'Lebanon',
+    UA: 'Ukraine', BG: 'Bulgaria', HR: 'Croatia', SK: 'Slovakia', SI: 'Slovenia',
+    LT: 'Lithuania', LV: 'Latvia', EE: 'Estonia', RS: 'Serbia', BA: 'Bosnia',
+    RU: 'Russia', BY: 'Belarus', KZ: 'Kazakhstan', UZ: 'Uzbekistan',
+    NP: 'Nepal', LA: 'Laos',
+};
+
+function getCountryName(code: string): string {
+    return COUNTRY_NAMES[code?.toUpperCase()] || code;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const DashboardOverview = () => {
+    const [stats, setStats] = useState<DashboardStats | null>(null);
+    const [statsLoading, setStatsLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchStats = async () => {
+            try {
+                // Fetch search stats and product stats in parallel
+                const [searchRes, productRes] = await Promise.all([
+                    fetch('/api/search-history?includeStats=true&limit=0'),
+                    fetch('/api/saved-products?includeStats=true&limit=0'),
+                ]);
+
+                const searchData = searchRes.ok ? await searchRes.json() : {};
+                const productData = productRes.ok ? await productRes.json() : {};
+
+                setStats({
+                    totalProducts: productData.stats?.totalProducts ?? 0,
+                    monitoredProducts: productData.stats?.monitoredProducts ?? 0,
+                    totalSearches: searchData.stats?.totalSearches ?? 0,
+                    searchesThisMonth: searchData.stats?.searchesThisMonth ?? 0,
+                    avgConfidence: searchData.stats?.avgConfidence ?? 0,
+                    uniqueHtsCodes: searchData.stats?.uniqueHtsCodes ?? 0,
+                });
+            } catch (err) {
+                console.error('[DashboardOverview] stats_fetch_failed', {
+                    ts: new Date().toISOString(),
+                    error: err,
+                });
+            } finally {
+                setStatsLoading(false);
+            }
+        };
+        fetchStats();
+    }, []);
+
     return (
         <div className="space-y-8">
             {/* Header */}
@@ -229,16 +325,10 @@ export const DashboardOverview = () => {
                 </Text>
             </div>
 
-            {/* Quick Actions */}
-            <Row gutter={[24, 24]}>
-                {QUICK_ACTIONS.map((action) => (
-                    <Col xs={24} md={8} key={action.href}>
-                        <QuickActionCard {...action} />
-                    </Col>
-                ))}
-            </Row>
+            {/* Stats Row */}
+            <StatsRow stats={stats} loading={statsLoading} />
 
-            {/* Bottom Row: Recent + Tariff Intelligence */}
+            {/* Recent + Tariff Intelligence */}
             <Row gutter={[24, 24]}>
                 <Col xs={24} lg={14}>
                     <RecentClassificationsCard />

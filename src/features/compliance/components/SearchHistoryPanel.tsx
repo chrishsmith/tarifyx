@@ -298,7 +298,7 @@ export const SearchHistoryPanel: React.FC<SearchHistoryPanelProps> = ({ onReClas
                             <Button 
                                 type="link" 
                                 size="small"
-                                onClick={() => window.location.href = '/dashboard/sourcing?tab=monitoring'}
+                                onClick={() => window.location.href = '/dashboard/products?tab=monitored'}
                                 className="ml-2"
                             >
                                 View →

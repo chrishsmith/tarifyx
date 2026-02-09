@@ -136,7 +136,7 @@ export async function GET(request: NextRequest) {
     } catch (error) {
         console.error('[API] Saved products error:', error);
         return NextResponse.json(
-            { error: 'Failed to fetch saved products', details: String(error) },
+            { success: false, error: 'Failed to fetch saved products', details: String(error) },
             { status: 500 }
         );
     }
@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
 
         if (!session?.user?.id) {
             return NextResponse.json(
-                { error: 'Unauthorized' },
+                { success: false, error: 'Unauthorized' },
                 { status: 401 }
             );
         }
@@ -182,14 +182,10 @@ export async function POST(request: NextRequest) {
     } catch (error) {
         console.error('[API] Save product error:', error);
         return NextResponse.json(
-            { error: 'Failed to save product' },
+            { success: false, error: 'Failed to save product' },
             { status: 500 }
         );
     }
 }
-
-
-
-
 
 

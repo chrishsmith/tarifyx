@@ -67,11 +67,11 @@ function MyProductsContent() {
     };
     
     const handleAnalyzeProduct = (htsCode: string, country: string) => {
-        router.push(`/dashboard/sourcing?hts=${htsCode}&from=${country}`);
+        router.push(`/dashboard/intelligence/cost-map?hts=${htsCode}&from=${country}`);
     };
     
     const handleFindSuppliers = (htsCode: string, country: string) => {
-        router.push(`/dashboard/sourcing?hts=${htsCode}&from=${country}&tab=suppliers`);
+        router.push(`/dashboard/intelligence/cost-map?hts=${htsCode}&from=${country}`);
     };
     
     const handleCloseDrawer = () => {
