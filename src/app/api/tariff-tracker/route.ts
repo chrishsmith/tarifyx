@@ -112,7 +112,7 @@ export async function GET(request: Request) {
       htsCoverage: HTS_CHAPTER_COVERAGE,
       reciprocalRates: IEEPA_RECIPROCAL_RATES,
       externalResources: EXTERNAL_RESOURCES,
-      lastUpdated: '2025-04-09', // Date of last tariff registry update
+      lastUpdated: '2026-02-09', // Date of last tariff data verification
     });
 
   } catch (error) {

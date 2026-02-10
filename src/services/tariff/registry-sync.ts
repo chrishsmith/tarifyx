@@ -436,7 +436,7 @@ export async function syncAllCountries(): Promise<SyncResult> {
  * Programs synced:
  * - IEEPA Universal Baseline (9903.01.20) - 10% for most countries
  * - IEEPA Fentanyl (9903.01.24-27) - CN, MX, CA
- * - IEEPA Reciprocal (9903.01.25) - CN 125%+
+ * - IEEPA Reciprocal (9903.01.25) - CN 10% (reduced from 125% per Nov 2025 deal)
  * - Section 301 (9903.88.xx) - China tariffs
  * - Section 232 (9903.80, 9903.85) - Steel/Aluminum
  */
@@ -524,7 +524,7 @@ export async function syncTariffRatesFromUSITC(): Promise<SyncResult> {
     }
     
     // ═══════════════════════════════════════════════════════════════════════════
-    // 3. IEEPA RECIPROCAL RATE (China 125%+)
+    // 3. IEEPA RECIPROCAL RATE (China 10% per Nov 2025 deal)
     // ═══════════════════════════════════════════════════════════════════════════
     
     console.log('\n  [3/5] Fetching China Reciprocal Rate (9903.01.25)...');

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Row, Col, Typography, Tag, Progress } from 'antd';
+import { Row, Col, Typography, Tag, Progress, Dropdown, Modal, message } from 'antd';
+import type { MenuProps } from 'antd';
 import { LoadingState } from '@/components/shared/LoadingState';
 import {
     Sparkles,
@@ -11,8 +12,18 @@ import {
     Search,
     Target,
     Eye,
+    MoreHorizontal,
+    Copy,
+    Map,
+    Calculator,
+    ShieldAlert,
+    FileCheck,
+    ClipboardList,
+    Bookmark,
+    Trash2,
 } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { TariffIntelligenceCard } from './TariffIntelligenceCard';
 import { formatHtsCode } from '@/utils/htsFormatting';
 
@@ -110,6 +121,8 @@ function getConfidenceColor(confidence: number): string {
 const RecentClassificationsCard: React.FC = () => {
     const [items, setItems] = useState<RecentClassification[]>([]);
     const [loading, setLoading] = useState(true);
+    const [savingId, setSavingId] = useState<string | null>(null);
+    const router = useRouter();
 
     useEffect(() => {
         const fetchRecent = async () => {
@@ -129,6 +142,155 @@ const RecentClassificationsCard: React.FC = () => {
         };
         fetchRecent();
     }, []);
+
+    /** Copy formatted HTS code to clipboard */
+    const handleCopyHts = (e: React.MouseEvent, htsCode: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        navigator.clipboard.writeText(formatHtsCode(htsCode));
+        message.success('HTS code copied');
+    };
+
+    /** Save product to My Products via API */
+    const handleSaveProduct = async (e: React.MouseEvent, item: RecentClassification) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setSavingId(item.id);
+        try {
+            const res = await fetch('/api/saved-products', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: item.productName || item.productDescription.slice(0, 100),
+                    description: item.productDescription,
+                    htsCode: item.htsCode,
+                    htsDescription: '',
+                    countryOfOrigin: item.countryOfOrigin,
+                    sourceSearchId: item.id,
+                }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                message.success('Product saved to My Products');
+            } else {
+                throw new Error(data.error || 'Save failed');
+            }
+        } catch (err) {
+            console.error('[DashboardOverview] save_product_failed', { ts: new Date().toISOString(), error: err });
+            message.error('Failed to save product');
+        } finally {
+            setSavingId(null);
+        }
+    };
+
+    /** Delete a search history item */
+    const handleDelete = async (e: React.MouseEvent, item: RecentClassification) => {
+        e.preventDefault();
+        e.stopPropagation();
+        Modal.confirm({
+            title: 'Delete classification?',
+            content: `Remove "${item.productName || item.productDescription.slice(0, 60)}" from your history?`,
+            okText: 'Delete',
+            okButtonProps: { danger: true },
+            onOk: async () => {
+                try {
+                    const res = await fetch(`/api/search-history/${item.id}`, { method: 'DELETE' });
+                    if (res.ok) {
+                        setItems(prev => prev.filter(i => i.id !== item.id));
+                        message.success('Classification deleted');
+                    } else {
+                        throw new Error('Delete failed');
+                    }
+                } catch (err) {
+                    console.error('[DashboardOverview] delete_failed', { ts: new Date().toISOString(), error: err });
+                    message.error('Failed to delete');
+                }
+            },
+        });
+    };
+
+    /** Build the 3-dot dropdown menu items for a row */
+    const getRowMenuItems = (item: RecentClassification): MenuProps['items'] => {
+        const hts = item.htsCode;
+        const country = item.countryOfOrigin || '';
+
+        return [
+            {
+                key: 'cost-map',
+                icon: <Map size={14} />,
+                label: 'View on Cost Map',
+                onClick: (info) => {
+                    info.domEvent.preventDefault();
+                    info.domEvent.stopPropagation();
+                    router.push(`/dashboard/intelligence/cost-map?hts=${hts}`);
+                },
+            },
+            {
+                key: 'landed-cost',
+                icon: <Calculator size={14} />,
+                label: 'Calculate Landed Cost',
+                onClick: (info) => {
+                    info.domEvent.preventDefault();
+                    info.domEvent.stopPropagation();
+                    const params = new URLSearchParams({ hts });
+                    if (country) params.set('country', country);
+                    router.push(`/dashboard/duties/calculator?${params.toString()}`);
+                },
+            },
+            { type: 'divider' as const },
+            {
+                key: 'adcvd',
+                icon: <ShieldAlert size={14} />,
+                label: 'Check AD/CVD',
+                onClick: (info) => {
+                    info.domEvent.preventDefault();
+                    info.domEvent.stopPropagation();
+                    const params = new URLSearchParams({ htsCode: hts });
+                    if (country) params.set('countryCode', country);
+                    router.push(`/dashboard/compliance/addcvd?${params.toString()}`);
+                },
+            },
+            {
+                key: 'fta',
+                icon: <FileCheck size={14} />,
+                label: 'FTA Calculator',
+                onClick: (info) => {
+                    info.domEvent.preventDefault();
+                    info.domEvent.stopPropagation();
+                    router.push(`/dashboard/compliance/fta-calculator?htsCode=${hts}`);
+                },
+            },
+            {
+                key: 'pga',
+                icon: <ClipboardList size={14} />,
+                label: 'PGA Requirements',
+                onClick: (info) => {
+                    info.domEvent.preventDefault();
+                    info.domEvent.stopPropagation();
+                    router.push(`/dashboard/compliance/pga?htsCode=${hts}`);
+                },
+            },
+            { type: 'divider' as const },
+            {
+                key: 'save',
+                icon: <Bookmark size={14} />,
+                label: 'Save to My Products',
+                disabled: savingId === item.id,
+                onClick: (info) => {
+                    handleSaveProduct(info.domEvent as unknown as React.MouseEvent, item);
+                },
+            },
+            {
+                key: 'delete',
+                icon: <Trash2 size={14} />,
+                label: 'Delete',
+                danger: true,
+                onClick: (info) => {
+                    handleDelete(info.domEvent as unknown as React.MouseEvent, item);
+                },
+            },
+        ];
+    };
 
     if (loading) {
         return (
@@ -179,7 +341,7 @@ const RecentClassificationsCard: React.FC = () => {
                 {items.map((item) => (
                     <Link
                         key={item.id}
-                        href={`/dashboard/import/analyze`}
+                        href={`/dashboard/import/analyze?id=${item.id}`}
                         className="block px-6 py-3.5 hover:bg-slate-50 transition-colors"
                     >
                         <div className="flex items-center justify-between">
@@ -189,9 +351,18 @@ const RecentClassificationsCard: React.FC = () => {
                                 </Text>
                                 <div className="flex items-center gap-2 mt-1">
                                     {item.htsCode && (
-                                        <Tag className="!m-0 font-mono text-xs border-slate-200 text-slate-600">
-                                            {formatHtsCode(item.htsCode)}
-                                        </Tag>
+                                        <span className="inline-flex items-center gap-1">
+                                            <Tag className="!m-0 font-mono text-xs border-slate-200 text-slate-600">
+                                                {formatHtsCode(item.htsCode)}
+                                            </Tag>
+                                            <button
+                                                onClick={(e) => handleCopyHts(e, item.htsCode)}
+                                                className="p-0.5 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors"
+                                                title="Copy HTS code"
+                                            >
+                                                <Copy size={12} />
+                                            </button>
+                                        </span>
                                     )}
                                     {item.countryOfOrigin && (
                                         <Text type="secondary" className="text-xs">
@@ -215,11 +386,26 @@ const RecentClassificationsCard: React.FC = () => {
                                     )}
                                 </div>
                             </div>
-                            <div className="flex items-center gap-1.5 text-slate-400 flex-shrink-0">
-                                <Clock size={12} />
-                                <Text type="secondary" className="text-xs whitespace-nowrap">
-                                    {formatTimeAgo(item.createdAt)}
-                                </Text>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                                <div className="flex items-center gap-1.5 text-slate-400">
+                                    <Clock size={12} />
+                                    <Text type="secondary" className="text-xs whitespace-nowrap">
+                                        {formatTimeAgo(item.createdAt)}
+                                    </Text>
+                                </div>
+                                <Dropdown
+                                    menu={{ items: getRowMenuItems(item) }}
+                                    trigger={['click']}
+                                    placement="bottomRight"
+                                >
+                                    <button
+                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                        className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors"
+                                        title="Actions"
+                                    >
+                                        <MoreHorizontal size={16} />
+                                    </button>
+                                </Dropdown>
                             </div>
                         </div>
                     </Link>

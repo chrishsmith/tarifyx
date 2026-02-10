@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { message, Typography, Progress, Segmented } from 'antd';
 import { Sparkles, FileSpreadsheet } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ProductInputSection } from '@/features/import-intelligence/components/ProductInputSection';
 import { ResultsContainer } from '@/features/import-intelligence/components/ResultsContainer';
 import { BulkClassificationContent } from '@/features/compliance/components/BulkClassificationContent';
+import { LoadingState } from '@/components/shared/LoadingState';
 import type { ProductInput, ImportAnalysis } from '@/features/import-intelligence/types';
 
 const { Text } = Typography;
@@ -30,18 +31,19 @@ export default function AnalyzePage() {
   const [mode, setMode] = useState<AnalyzeMode>(initialMode);
   const [analysis, setAnalysis] = useState<ImportAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
+  const [hydrating, setHydrating] = useState(false);
   const [progressStage, setProgressStage] = useState(0);
   const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastInputRef = useRef<ProductInput | null>(null);
+  const hydratedIdRef = useRef<string | null>(null);
 
   const handleModeChange = (value: AnalyzeMode) => {
     setMode(value);
-    // Update URL without full navigation
     const url = value === 'bulk' ? '/dashboard/import/analyze?mode=bulk' : '/dashboard/import/analyze';
     router.replace(url, { scroll: false });
   };
 
-  const startProgressSimulation = () => {
+  const startProgressSimulation = useCallback(() => {
     setProgressStage(0);
     let stage = 0;
     const intervals = [1500, 2500, 4000, 2000, 2000, 3000];
@@ -53,16 +55,16 @@ export default function AnalyzePage() {
       }
     };
     progressTimerRef.current = setTimeout(advance, intervals[0] || 1500);
-  };
+  }, []);
 
-  const stopProgressSimulation = () => {
+  const stopProgressSimulation = useCallback(() => {
     if (progressTimerRef.current) {
       clearTimeout(progressTimerRef.current);
       progressTimerRef.current = null;
     }
-  };
+  }, []);
 
-  const handleAnalyze = async (input: ProductInput) => {
+  const runAnalysis = useCallback(async (input: ProductInput) => {
     setLoading(true);
     lastInputRef.current = input;
     startProgressSimulation();
@@ -72,13 +74,13 @@ export default function AnalyzePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
       });
-      
+
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || 'Analysis failed');
       }
-      
+
       setAnalysis(data.analysis);
     } catch (error) {
       console.error('[AnalyzePage] analyze_failed', { ts: new Date().toISOString(), error });
@@ -87,7 +89,68 @@ export default function AnalyzePage() {
       stopProgressSimulation();
       setLoading(false);
     }
-  };
+  }, [startProgressSimulation, stopProgressSimulation]);
+
+  // Hydrate cached analysis from search history when ?id= is present
+  useEffect(() => {
+    const historyId = searchParams.get('id');
+    if (!historyId || hydratedIdRef.current === historyId) return;
+    hydratedIdRef.current = historyId;
+
+    const hydrate = async () => {
+      setHydrating(true);
+      try {
+        const res = await fetch(`/api/search-history/${historyId}`);
+        if (!res.ok) throw new Error('Failed to load cached analysis');
+        const detail = await res.json();
+
+        // Try instant hydration from _fullAnalysis (saved by the new analyze route)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const fullAnalysis = (detail.fullResult as any)?._fullAnalysis;
+        if (fullAnalysis) {
+          setAnalysis(fullAnalysis as ImportAnalysis);
+          setHydrating(false);
+          return;
+        }
+
+        // Fallback for older entries: re-run analysis using the cached HTS code.
+        // Passing htsCode skips AI classification (the expensive part), so this is fast.
+        if (detail.htsCode) {
+          setHydrating(false);
+          const input: ProductInput = {
+            description: detail.productDescription || '',
+            htsCode: detail.htsCode,
+            countryCode: detail.countryOfOrigin || 'CN',
+            value: 10000,
+            quantity: 1000,
+            attributes: {
+              containsBattery: false,
+              containsChemicals: false,
+              forChildren: false,
+              foodContact: false,
+              wireless: false,
+              medicalDevice: false,
+              pressurized: false,
+              flammable: false,
+            },
+          };
+          runAnalysis(input);
+          return;
+        }
+
+        // No usable data at all
+        message.info('Cached analysis not available. Please re-analyze.');
+        router.replace('/dashboard/import/analyze');
+      } catch (err) {
+        console.error('[AnalyzePage] hydrate_failed', { ts: new Date().toISOString(), error: err });
+        message.error('Could not load cached analysis.');
+        router.replace('/dashboard/import/analyze');
+      } finally {
+        setHydrating(false);
+      }
+    };
+    hydrate();
+  }, [searchParams, router, runAnalysis]);
 
   const handleEdit = () => {
     setAnalysis(null);
@@ -95,6 +158,17 @@ export default function AnalyzePage() {
 
   // Hide mode toggle when showing single-product results
   const showModeToggle = mode === 'bulk' || !analysis;
+
+  // Show loading state while hydrating a cached analysis
+  if (hydrating) {
+    return (
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-8">
+          <LoadingState message="Loading your previous analysis..." />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -133,7 +207,7 @@ export default function AnalyzePage() {
         <>
           {!analysis ? (
             <>
-              <ProductInputSection onAnalyze={handleAnalyze} loading={loading} />
+              <ProductInputSection onAnalyze={runAnalysis} loading={loading} />
               {loading && (
                 <div className="mt-6 bg-white border border-slate-200 rounded-xl shadow-sm p-6 max-w-[1024px] mx-auto">
                   <div className="flex items-center gap-4 mb-3">

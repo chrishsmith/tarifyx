@@ -31,7 +31,7 @@
  * - Universal 10% IEEPA baseline applies to NEARLY ALL imports
  * - Even FTA partners (Singapore, Korea, etc.) face this 10%
  * - Only USMCA (MX/CA) may have exemptions for compliant goods
- * - China faces 145%+ total additional duties
+ * - China faces ~20% IEEPA + 7.5-100% Section 301 (product-dependent)
  * 
  * Always use calculateEffectiveTariff() from landedCost.ts or
  * getEffectiveTariff() from registry.ts for accurate rates.

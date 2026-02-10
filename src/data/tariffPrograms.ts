@@ -186,7 +186,7 @@ export const IEEPA_PROGRAMS: TariffProgram[] = [
         rate: 10,
         rateType: 'ad_valorem',
         productScope: 'all',
-        exclusions: ['USMCA-compliant goods from CA/MX (paused)', 'Some energy products'],
+        exclusions: ['USMCA-compliant goods from CA/MX (exempt under fentanyl order)', 'Some energy products'],
         notes: [
             '⚠️ APPLIES ON TOP OF FTA PREFERENCES',
             'Even Singapore FTA goods face this 10%',
@@ -208,17 +208,16 @@ export const IEEPA_PROGRAMS: TariffProgram[] = [
         authority: 'President / IEEPA',
         legalBasis: 'International Emergency Economic Powers Act',
         effectiveDate: '2025-02-04',
-        description: 'Emergency tariffs on Chinese goods related to the fentanyl crisis.',
+        description: 'Emergency tariffs on Chinese goods related to the fentanyl crisis (reduced to 10% per Nov 2025 trade deal).',
         affectedCountries: ['CN', 'HK'],
-        rate: 20,
+        rate: 10,
         rateType: 'ad_valorem',
         productScope: 'all',
         notes: [
-            'Applies to virtually ALL Chinese imports',
-            'Cumulative with Section 301 AND Universal Baseline',
-            'First 10% effective Feb 4, 2025',
-            'Additional 10% effective Mar 4, 2025 (total 20%)',
-            'Executive Order 14195',
+            'Originally 20% (10% Feb 4 + 10% Mar 4, 2025)',
+            'Reduced to 10% effective Nov 10, 2025 per trade arrangement',
+            'Cumulative with Section 301 AND reciprocal IEEPA',
+            'Executive Order 14195 (modified Nov 4, 2025)',
         ],
         officialSource: 'https://www.whitehouse.gov/presidential-actions/',
     },
@@ -276,16 +275,17 @@ export const IEEPA_PROGRAMS: TariffProgram[] = [
         authority: 'President / IEEPA',
         legalBasis: 'International Emergency Economic Powers Act',
         effectiveDate: '2025-04-09',
-        description: 'Additional reciprocal tariffs on China beyond the baseline.',
+        description: 'Reciprocal tariff on China (reduced to 10% per Nov 2025 trade deal, stays at 10% until Nov 10, 2026).',
         affectedCountries: ['CN', 'HK'],
-        rate: 125,  // This is ON TOP of fentanyl 20% + Section 301
+        rate: 10,  // Reduced from 125% → 30% (Geneva, May 2025) → 10% (Nov 2025 deal)
         rateType: 'ad_valorem',
         productScope: 'all',
         notes: [
-            'ADDS to Fentanyl 20% + Section 301 rates',
-            'China total can exceed 145%+ when combined',
-            'Subject to frequent changes - verify current rate',
-            'Executive Order 14257',
+            'Originally 125% (April 2025), reduced via Geneva deal to 30% (May 2025)',
+            'Further reduced to 10% per Nov 4, 2025 trade arrangement',
+            'Stays at 10% until Nov 10, 2026 (subject to renewal)',
+            'China total IEEPA: 20% (10% reciprocal + 10% fentanyl)',
+            'Section 301 tariffs (7.5-100%) still apply on top',
         ],
         officialSource: 'https://www.whitehouse.gov/presidential-actions/',
     },
@@ -394,14 +394,14 @@ export const COUNTRY_TARIFF_PROFILES: CountryTariffSummary[] = [
             'ieepa_fentanyl_cn', 'ieepa_reciprocal_cn',
             'section232_steel', 'section232_aluminum'
         ],
-        totalAdditionalRate: 145,  // Base estimate, varies by product
+        totalAdditionalRate: 45,  // IEEPA 20% + Section 301 ~25% avg (varies by product)
         notes: [
             '⚠️ Highest tariff rates of any country',
+            'IEEPA: 20% total (10% reciprocal + 10% fentanyl) per Nov 2025 deal',
             'Section 301: 7.5% to 100% (product dependent)',
-            'IEEPA Fentanyl: 20%',
-            'IEEPA Reciprocal: 125%+',
-            'Total can exceed 145% on many products',
-            'Check product-specific rates carefully',
+            'Total varies widely: ~27.5% (consumer goods) to ~120%+ (EVs)',
+            'IEEPA rates stay at 10%+10% until Nov 10, 2026',
+            'Check product-specific Section 301 rates carefully',
         ],
     },
     {
@@ -410,10 +410,11 @@ export const COUNTRY_TARIFF_PROFILES: CountryTariffSummary[] = [
         flag: '🇭🇰',
         tradeStatus: 'elevated',
         applicablePrograms: ['ieepa_fentanyl_cn', 'ieepa_reciprocal_cn'],
-        totalAdditionalRate: 145,
+        totalAdditionalRate: 20,  // IEEPA only (no Section 301)
         notes: [
-            'Treated same as China for tariff purposes',
-            'All China tariffs apply',
+            'Treated same as China for IEEPA tariff purposes',
+            'IEEPA: 20% total (10% reciprocal + 10% fentanyl)',
+            'Section 301 may also apply depending on product origin',
         ],
     },
     // ═══════════════════════════════════════════════════════════════════
@@ -425,13 +426,13 @@ export const COUNTRY_TARIFF_PROFILES: CountryTariffSummary[] = [
         flag: '🇲🇽',
         tradeStatus: 'fta',
         applicablePrograms: ['ieepa_fentanyl_mx'],
-        totalAdditionalRate: 25,  // When active; may be paused for USMCA goods
+        totalAdditionalRate: 25,  // Active since March 4, 2025; USMCA-compliant goods exempt
         notes: [
-            '⚠️ USMCA goods may have tariffs paused - status varies',
-            'Fentanyl tariff: 25% (check current status)',
-            'Must meet USMCA rules of origin for any exemption',
-            'Steel/Aluminum: Subject to quotas',
-            'Verify current status before import',
+            '25% fentanyl tariff active since March 4, 2025',
+            'USMCA-compliant goods are largely exempt',
+            'Non-USMCA goods face full 25% rate',
+            'Must meet USMCA rules of origin for exemption',
+            'Steel/Aluminum/Autos: Subject to separate Section 232 tariffs',
         ],
     },
     {
@@ -440,13 +441,13 @@ export const COUNTRY_TARIFF_PROFILES: CountryTariffSummary[] = [
         flag: '🇨🇦',
         tradeStatus: 'fta',
         applicablePrograms: ['ieepa_fentanyl_ca'],
-        totalAdditionalRate: 25,  // When active; may be paused for USMCA goods
+        totalAdditionalRate: 25,  // Active since March 4, 2025; USMCA-compliant goods exempt
         notes: [
-            '⚠️ USMCA goods may have tariffs paused - status varies',
-            'Fentanyl tariff: 25% (check current status)',
-            'Energy products may be exempt',
-            'Steel/Aluminum: Subject to quotas',
-            'Verify current status before import',
+            '25% fentanyl tariff active since March 4, 2025',
+            'USMCA-compliant goods are largely exempt',
+            'Energy products may have separate treatment',
+            'Non-USMCA goods face full 25% rate',
+            'Steel/Aluminum/Autos: Subject to separate Section 232 tariffs',
         ],
     },
     // ═══════════════════════════════════════════════════════════════════
@@ -742,13 +743,15 @@ export function getCountryPrograms(countryCode: string): TariffProgram[] {
  */
 export function getCountryReciprocalRate(countryCode: string): number {
     const reciprocalRates: Record<string, number> = {
-        // Fentanyl-targeted + Reciprocal
-        'CN': 145,  // Fentanyl 20% + Reciprocal 125% (on top of Section 301)
-        'HK': 145,  // Same as China
+        // China: 10% reciprocal + 10% fentanyl = 20% total IEEPA (Nov 2025 trade deal)
+        // Section 301 (7.5-100%) applies on top separately
+        'CN': 20,   // Fentanyl 10% + Reciprocal 10% (per Nov 2025 deal)
+        'HK': 20,   // Same as China
         
-        // USMCA - rates may be paused/active, show worst case
-        'MX': 25,   // Fentanyl tariff (may be paused)
-        'CA': 25,   // Fentanyl tariff (may be paused)
+        // USMCA - 25% fentanyl tariff active since March 4, 2025
+        // USMCA-compliant goods largely exempt
+        'MX': 25,   // Fentanyl tariff (active; USMCA-compliant goods exempt)
+        'CA': 25,   // Fentanyl tariff (active; USMCA-compliant goods exempt)
         
         // Higher reciprocal rates (country-specific)
         'VN': 46,

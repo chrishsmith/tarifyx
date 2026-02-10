@@ -104,7 +104,53 @@ export async function POST(request: NextRequest) {
     // Run analysis
     const analysis = await analyzeProduct(input);
     
-    // TODO: Save analysis to database for history/portfolio
+    // Save analysis to search_history so it appears on the dashboard
+    let searchHistoryId: string | undefined;
+    try {
+      if (analysis.classification?.htsCode) {
+        const { saveSearchToHistory } = await import('@/services/searchHistory');
+        
+        // Build a ClassificationResult-shaped object from the analysis
+        const classificationResult = {
+          htsCode: {
+            code: analysis.classification.htsCode,
+            description: analysis.classification.description || '',
+          },
+          confidence: analysis.classification.confidence ?? 0,
+          dutyRate: {
+            generalRate: analysis.classification.baseMfnRate != null
+              ? `${analysis.classification.baseMfnRate}%`
+              : '',
+          },
+          effectiveTariff: analysis.landedCost?.tariffBreakdown
+            ? {
+                totalAdValorem: analysis.landedCost.tariffBreakdown.effectiveRate ?? null,
+                additionalDuties: analysis.landedCost.tariffBreakdown.breakdown?.filter(
+                  (b: { type?: string }) => b.type !== 'MFN'
+                ) ?? [],
+              }
+            : undefined,
+          suggestedProductName: analysis.classification.suggestedProductName || null,
+          // Store the full ImportAnalysis in fullResult for instant hydration
+          _fullAnalysis: analysis,
+        };
+
+        const classificationInput = {
+          productDescription: input.description || input.htsCode || '',
+          productName: analysis.classification.suggestedProductName || null,
+          countryOfOrigin: input.countryCode,
+        };
+
+        searchHistoryId = await saveSearchToHistory(
+          classificationInput as any,
+          classificationResult as any,
+          userId,
+        );
+      }
+    } catch (saveError) {
+      // Non-fatal — don't fail the analysis if history save fails
+      console.error('[Import Intelligence API] Failed to save to search_history:', saveError);
+    }
     
     const duration = Date.now() - startTime;
     console.log(`[Import Intelligence API] Analysis completed in ${duration}ms`);
@@ -112,6 +158,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       analysis,
+      searchHistoryId,
       meta: {
         duration,
         timestamp: new Date().toISOString(),

@@ -39,6 +39,7 @@ import {
     ArrowUp,
     ArrowDown,
 } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 import { TariffBreakdown } from './TariffBreakdown';
 import { LoadingState } from '@/components/shared';
 import { formatHtsCode } from '@/utils/htsFormatting';
@@ -167,9 +168,28 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
 export const LandedCostCalculator: React.FC = () => {
     const [form] = Form.useForm<FormValues>();
     const [messageApi, contextHolder] = message.useMessage();
+    const searchParams = useSearchParams();
     const [isCalculating, setIsCalculating] = useState(false);
     const [result, setResult] = useState<LandedCostResult | null>(null);
     const [error, setError] = useState<string | null>(null);
+
+    // Pre-fill form from URL params (?hts=...&country=...)
+    useEffect(() => {
+        const hts = searchParams.get('hts');
+        const country = searchParams.get('country');
+        if (hts || country) {
+            const values: Partial<FormValues> = {};
+            if (hts) values.htsCode = hts;
+            if (country) {
+                const upperCountry = country.toUpperCase();
+                // Only set if it's a valid country option
+                if (COUNTRY_OPTIONS.some(c => c.value === upperCountry)) {
+                    values.countryCode = upperCountry;
+                }
+            }
+            form.setFieldsValue(values);
+        }
+    }, [searchParams, form]);
     
     // Saved scenarios state
     const [savedScenarios, setSavedScenarios] = useLocalStorage<SavedScenario[]>(SCENARIOS_STORAGE_KEY, []);

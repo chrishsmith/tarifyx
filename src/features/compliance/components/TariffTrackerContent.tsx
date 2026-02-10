@@ -19,7 +19,6 @@ import {
   Alert,
   Divider,
   List,
-  Progress,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
@@ -30,23 +29,26 @@ import {
   AlertTriangle,
   Shield,
   Globe,
-  Info,
   CheckCircle,
   XCircle,
   PauseCircle,
   Calendar,
   Percent,
   Building,
-  Flag,
   BookOpen,
   TrendingUp,
   Download,
+  ArrowRight,
+  Calculator,
+  Package,
 } from 'lucide-react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { LoadingState, ErrorState } from '@/components/shared';
 import { exportToExcel, type ExcelColumn } from '@/services/exportService';
 import { formatHtsCode } from '@/utils/htsFormatting';
 
-const { Title, Text, Paragraph, Link } = Typography;
+const { Title, Text, Paragraph } = Typography;
 const { Panel } = Collapse;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -134,25 +136,45 @@ const STATUS_ICONS: Record<string, React.ReactNode> = {
   expired: <XCircle size={14} className="text-gray-400" />,
 };
 
+/** Map ISO codes to country names for display */
+const COUNTRY_NAMES: Record<string, string> = {
+  CN: 'China', HK: 'Hong Kong', VN: 'Vietnam', MX: 'Mexico', CA: 'Canada',
+  IN: 'India', TH: 'Thailand', ID: 'Indonesia', BD: 'Bangladesh', KH: 'Cambodia',
+  TW: 'Taiwan', KR: 'South Korea', JP: 'Japan', MY: 'Malaysia', PH: 'Philippines',
+  PK: 'Pakistan', LK: 'Sri Lanka', GB: 'United Kingdom', DE: 'Germany', IT: 'Italy',
+  FR: 'France', ES: 'Spain', NL: 'Netherlands', BE: 'Belgium', PL: 'Poland',
+  SG: 'Singapore', AU: 'Australia', IL: 'Israel', CL: 'Chile', CO: 'Colombia',
+  PE: 'Peru', BR: 'Brazil', TR: 'Turkey', EU: 'European Union',
+};
+
+function getCountryName(code: string): string {
+  return COUNTRY_NAMES[code?.toUpperCase()] || code;
+}
+
 const COUNTRY_OPTIONS = [
-  { value: 'CN', label: '🇨🇳 China' },
-  { value: 'VN', label: '🇻🇳 Vietnam' },
-  { value: 'MX', label: '🇲🇽 Mexico' },
-  { value: 'CA', label: '🇨🇦 Canada' },
-  { value: 'IN', label: '🇮🇳 India' },
-  { value: 'TH', label: '🇹🇭 Thailand' },
-  { value: 'ID', label: '🇮🇩 Indonesia' },
-  { value: 'BD', label: '🇧🇩 Bangladesh' },
-  { value: 'KH', label: '🇰🇭 Cambodia' },
-  { value: 'TW', label: '🇹🇼 Taiwan' },
-  { value: 'KR', label: '🇰🇷 South Korea' },
-  { value: 'JP', label: '🇯🇵 Japan' },
-  { value: 'MY', label: '🇲🇾 Malaysia' },
-  { value: 'PH', label: '🇵🇭 Philippines' },
-  { value: 'PK', label: '🇵🇰 Pakistan' },
-  { value: 'LK', label: '🇱🇰 Sri Lanka' },
-  { value: 'GB', label: '🇬🇧 United Kingdom' },
-  { value: 'DE', label: '🇩🇪 Germany' },
+  { value: 'CN', label: 'China' },
+  { value: 'HK', label: 'Hong Kong' },
+  { value: 'VN', label: 'Vietnam' },
+  { value: 'MX', label: 'Mexico' },
+  { value: 'CA', label: 'Canada' },
+  { value: 'IN', label: 'India' },
+  { value: 'TH', label: 'Thailand' },
+  { value: 'ID', label: 'Indonesia' },
+  { value: 'BD', label: 'Bangladesh' },
+  { value: 'KH', label: 'Cambodia' },
+  { value: 'TW', label: 'Taiwan' },
+  { value: 'KR', label: 'South Korea' },
+  { value: 'JP', label: 'Japan' },
+  { value: 'MY', label: 'Malaysia' },
+  { value: 'PH', label: 'Philippines' },
+  { value: 'PK', label: 'Pakistan' },
+  { value: 'LK', label: 'Sri Lanka' },
+  { value: 'GB', label: 'United Kingdom' },
+  { value: 'DE', label: 'Germany' },
+  { value: 'SG', label: 'Singapore' },
+  { value: 'AU', label: 'Australia' },
+  { value: 'BR', label: 'Brazil' },
+  { value: 'TR', label: 'Turkey' },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -160,15 +182,18 @@ const COUNTRY_OPTIONS = [
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const TariffTrackerContent: React.FC = () => {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   // State
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<TariffTrackerResponse | null>(null);
   
-  // Filters
-  const [htsSearch, setHtsSearch] = useState('');
-  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  // Filters — initialize from URL params for deep linking
+  const [htsSearch, setHtsSearch] = useState(searchParams.get('hts') || '');
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(searchParams.get('country') || null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(searchParams.get('category') || null);
   const [showActiveOnly, setShowActiveOnly] = useState(true);
   
   // Modal state
@@ -199,7 +224,7 @@ export const TariffTrackerContent: React.FC = () => {
       }
     } catch (err) {
       setError('Failed to load tariff tracker data');
-      console.error('Tariff tracker fetch error:', err);
+      console.error('[TariffTrackerContent] Fetch error:', err);
     } finally {
       setLoading(false);
     }
@@ -246,10 +271,16 @@ export const TariffTrackerContent: React.FC = () => {
     breakdown.push({ program: 'IEEPA Reciprocal/Baseline', rate: ieepaRate });
     total += ieepaRate;
     
-    // Fentanyl (CN)
+    // Fentanyl
     if (selectedCountry === 'CN' || selectedCountry === 'HK') {
-      breakdown.push({ program: 'IEEPA Fentanyl', rate: 20 });
-      total += 20;
+      breakdown.push({ program: 'IEEPA Fentanyl', rate: 10 });
+      total += 10;
+    } else if (selectedCountry === 'MX') {
+      breakdown.push({ program: 'IEEPA Fentanyl (Mexico)', rate: 25 });
+      total += 25;
+    } else if (selectedCountry === 'CA') {
+      breakdown.push({ program: 'IEEPA Fentanyl (Canada)', rate: 25 });
+      total += 25;
     }
     
     // Section 301 (CN only)
@@ -302,6 +333,14 @@ export const TariffTrackerContent: React.FC = () => {
     exportToExcel(filteredPrograms as unknown as Record<string, unknown>[], exportColumns, { filename: `tariff-programs-${Date.now()}` });
   };
 
+  // Navigate to landed cost calculator with context
+  const handleCalculateLandedCost = () => {
+    const params = new URLSearchParams();
+    if (htsSearch) params.set('hts', htsSearch);
+    if (selectedCountry) params.set('country', selectedCountry);
+    router.push(`/dashboard/duties/calculator?${params.toString()}`);
+  };
+
   // Table columns
   const columns: ColumnsType<TariffProgram> = [
     {
@@ -311,7 +350,7 @@ export const TariffTrackerContent: React.FC = () => {
       render: (_, record) => (
         <div>
           <div className="font-medium text-slate-900">{record.name}</div>
-          <div className="text-xs text-slate-500">{record.chapter99Code || '—'}</div>
+          <div className="text-xs text-slate-500 font-mono">{record.chapter99Code || '—'}</div>
         </div>
       ),
     },
@@ -362,14 +401,14 @@ export const TariffTrackerContent: React.FC = () => {
     {
       title: 'Affected',
       key: 'affected',
-      width: 100,
+      width: 120,
       render: (_, record) => {
         const countries = record.affectedCountries;
         if (countries.includes('ALL')) {
-          return <Tag icon={<Globe size={12} />}>All Countries</Tag>;
+          return <Tag icon={<Globe size={12} />} color="cyan">All Countries</Tag>;
         }
         return (
-          <Tooltip title={countries.join(', ')}>
+          <Tooltip title={countries.map(c => getCountryName(c)).join(', ')}>
             <Tag>{countries.length} countr{countries.length === 1 ? 'y' : 'ies'}</Tag>
           </Tooltip>
         );
@@ -420,67 +459,77 @@ export const TariffTrackerContent: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header Alert */}
-      <Alert
-        type="warning"
-        showIcon
-        icon={<AlertTriangle size={16} />}
-        message="April 2025 Tariff Landscape"
-        description="The IEEPA universal baseline (10%) now applies to nearly all imports including FTA partners. China faces cumulative tariffs exceeding 145%."
-        className="mb-4"
-      />
+    <div>
+      {/* Context Banner — dynamic based on current landscape */}
+      <div className="mb-6">
+        <Alert
+          type="info"
+          showIcon
+          icon={<AlertTriangle size={16} />}
+          message="Current Tariff Landscape (as of February 2026)"
+          description={
+            <div className="text-sm space-y-1">
+              <div>China IEEPA rates reduced to 10% reciprocal + 10% fentanyl (20% total) per Nov 2025 trade deal — stays at this level until Nov 10, 2026.</div>
+              <div>Mexico/Canada 25% fentanyl tariffs active since March 2025 — USMCA-compliant goods largely exempt.</div>
+              <div>Section 301 tariffs (7.5-100%) on China remain in effect. Country-specific reciprocal rates unchanged for other nations.</div>
+            </div>
+          }
+        />
+      </div>
 
       {/* Summary Cards */}
-      <Row gutter={[16, 16]}>
-        <Col xs={12} sm={6}>
-          <Card size="small" className="text-center">
-            <Statistic
-              title="Section 301"
-              value={data.summary.byCategory.section_301}
-              suffix="lists"
-              valueStyle={{ color: '#dc2626' }}
-              prefix={<Shield size={16} />}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card size="small" className="text-center">
-            <Statistic
-              title="IEEPA Programs"
-              value={data.summary.byCategory.ieepa}
-              suffix="active"
-              valueStyle={{ color: '#f97316' }}
-              prefix={<Globe size={16} />}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card size="small" className="text-center">
-            <Statistic
-              title="Section 232"
-              value={data.summary.byCategory.section_232}
-              suffix="products"
-              valueStyle={{ color: '#2563eb' }}
-              prefix={<Building size={16} />}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card size="small" className="text-center">
-            <Statistic
-              title="Active Programs"
-              value={data.summary.activePrograms}
-              suffix={`/ ${data.summary.totalPrograms}`}
-              valueStyle={{ color: '#0d9488' }}
-              prefix={<CheckCircle size={16} />}
-            />
-          </Card>
-        </Col>
-      </Row>
+      <div className="mb-6">
+        <Row gutter={[16, 16]}>
+          <Col xs={12} sm={6}>
+            <Card size="small" className="text-center border border-slate-200 shadow-sm">
+              <Statistic
+                title="Section 301"
+                value={data.summary.byCategory.section_301}
+                suffix="lists"
+                valueStyle={{ color: '#dc2626' }}
+                prefix={<Shield size={16} />}
+              />
+            </Card>
+          </Col>
+          <Col xs={12} sm={6}>
+            <Card size="small" className="text-center border border-slate-200 shadow-sm">
+              <Statistic
+                title="IEEPA Programs"
+                value={data.summary.byCategory.ieepa}
+                suffix="active"
+                valueStyle={{ color: '#f97316' }}
+                prefix={<Globe size={16} />}
+              />
+            </Card>
+          </Col>
+          <Col xs={12} sm={6}>
+            <Card size="small" className="text-center border border-slate-200 shadow-sm">
+              <Statistic
+                title="Section 232"
+                value={data.summary.byCategory.section_232}
+                suffix="products"
+                valueStyle={{ color: '#2563eb' }}
+                prefix={<Building size={16} />}
+              />
+            </Card>
+          </Col>
+          <Col xs={12} sm={6}>
+            <Card size="small" className="text-center border border-slate-200 shadow-sm">
+              <Statistic
+                title="Active Programs"
+                value={data.summary.activePrograms}
+                suffix={`/ ${data.summary.totalPrograms}`}
+                valueStyle={{ color: '#0d9488' }}
+                prefix={<CheckCircle size={16} />}
+              />
+            </Card>
+          </Col>
+        </Row>
+      </div>
 
       {/* Search & Filters */}
-      <Card className="mb-4">
+      <div className="mb-6">
+      <Card className="border border-slate-200 shadow-sm">
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="flex-1">
             <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -494,7 +543,7 @@ export const TariffTrackerContent: React.FC = () => {
               allowClear
             />
           </div>
-          <div className="w-full sm:w-48">
+          <div className="w-full sm:w-52">
             <label className="block text-sm font-medium text-slate-700 mb-1">
               Country of Origin
             </label>
@@ -504,6 +553,10 @@ export const TariffTrackerContent: React.FC = () => {
               value={selectedCountry}
               onChange={setSelectedCountry}
               allowClear
+              showSearch
+              filterOption={(input, option) =>
+                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }
               className="w-full"
             />
           </div>
@@ -535,58 +588,97 @@ export const TariffTrackerContent: React.FC = () => {
           </div>
         </div>
       </Card>
+      </div>
 
       {/* Calculated Total (when HTS + Country selected) */}
       {calculatedTotal && (
+        <div className="mb-6">
         <Card 
-          className="border-2 border-teal-200 bg-teal-50"
+          className="border-2 border-teal-200 bg-teal-50 shadow-sm"
           title={
             <Space>
               <Percent size={18} className="text-teal-600" />
-              <span>Total Additional Tariff for HTS {formatHtsCode(htsSearch)} from {selectedCountry}</span>
+              <span>
+                Additional Tariff for HTS {formatHtsCode(htsSearch)} from {getCountryName(selectedCountry || '')}
+              </span>
             </Space>
+          }
+          extra={
+            <Button
+              type="primary"
+              icon={<Calculator size={14} />}
+              onClick={handleCalculateLandedCost}
+              size="small"
+            >
+              Full Landed Cost
+            </Button>
           }
         >
           <Row gutter={[16, 16]} align="middle">
             <Col xs={24} sm={8}>
               <div className="text-center">
-                <Progress
-                  type="dashboard"
-                  percent={Math.min(calculatedTotal.total, 100)}
-                  format={() => (
-                    <div>
-                      <div className="text-2xl font-bold text-teal-600">{calculatedTotal.total}%</div>
-                      <div className="text-xs text-slate-500">Total Rate</div>
-                    </div>
-                  )}
-                  strokeColor="#0d9488"
-                  size={120}
-                />
+                <div className="text-4xl font-bold text-teal-600">{calculatedTotal.total}%</div>
+                <div className="text-sm text-slate-500 mt-1">Total Additional Rate</div>
+                <div className="text-xs text-slate-400 mt-0.5">(excludes base MFN duty)</div>
               </div>
             </Col>
             <Col xs={24} sm={16}>
               <div className="space-y-2">
                 <Text strong>Breakdown:</Text>
                 {calculatedTotal.breakdown.map((item, i) => (
-                  <div key={i} className="flex justify-between items-center py-1 border-b border-slate-100 last:border-0">
+                  <div key={i} className="flex justify-between items-center py-1.5 border-b border-slate-100 last:border-0">
                     <Text>{item.program}</Text>
-                    <Tag color="teal">{item.rate}%</Tag>
+                    <Tag color="cyan">{item.rate}%</Tag>
                   </div>
                 ))}
               </div>
               <Alert
                 type="info"
                 className="mt-3"
-                message="Note: This is an estimate based on known programs. Actual rates may vary. Does not include base MFN duty or AD/CVD orders."
+                message="This is an estimate based on known programs. Does not include base MFN duty or AD/CVD orders. Use the Landed Cost Calculator for a complete breakdown."
                 showIcon
               />
+              {(selectedCountry === 'MX' || selectedCountry === 'CA') && (
+                <Alert
+                  type="warning"
+                  className="mt-2"
+                  message="USMCA-compliant goods from Mexico/Canada may be exempt from the 25% fentanyl tariff. Check FTA qualification."
+                  showIcon
+                />
+              )}
             </Col>
           </Row>
         </Card>
+        </div>
+      )}
+
+      {/* Quick Actions */}
+      {(htsSearch || selectedCountry) && (
+        <div className="flex flex-wrap gap-3 mb-6">
+          {htsSearch && selectedCountry && (
+            <Button
+              icon={<Calculator size={14} />}
+              onClick={handleCalculateLandedCost}
+            >
+              Calculate Full Landed Cost
+            </Button>
+          )}
+          <Link href="/dashboard/import/analyze">
+            <Button icon={<Package size={14} />}>
+              Classify a Product
+            </Button>
+          </Link>
+          <Link href="/dashboard/products">
+            <Button icon={<TrendingUp size={14} />}>
+              View My Products
+            </Button>
+          </Link>
+        </div>
       )}
 
       {/* Main Content - Collapsible Sections */}
-      <Collapse defaultActiveKey={['section_301', 'ieepa', 'section_232']} className="mb-6">
+      <div className="mb-6">
+      <Collapse defaultActiveKey={['section_301', 'ieepa', 'section_232']}>
         {/* Section 301 */}
         <Panel
           header={
@@ -650,9 +742,12 @@ export const TariffTrackerContent: React.FC = () => {
           />
         </Panel>
       </Collapse>
+      </div>
 
       {/* IEEPA Reciprocal Rates by Country */}
+      <div className="mb-6">
       <Card
+        className="border border-slate-200 shadow-sm"
         title={
           <Space>
             <TrendingUp size={18} className="text-orange-500" />
@@ -677,20 +772,26 @@ export const TariffTrackerContent: React.FC = () => {
             .map(([code, rate]) => (
               <div 
                 key={code}
-                className={`p-3 rounded-lg border ${
-                  rate >= 100 ? 'bg-red-50 border-red-200' :
-                  rate >= 40 ? 'bg-orange-50 border-orange-200' :
-                  rate >= 20 ? 'bg-yellow-50 border-yellow-200' :
+                className={`p-3 rounded-lg border cursor-pointer transition-colors hover:ring-2 hover:ring-teal-300 ${
+                  rate >= 40 ? 'bg-red-50 border-red-200' :
+                  rate >= 25 ? 'bg-orange-50 border-orange-200' :
+                  rate >= 15 ? 'bg-yellow-50 border-yellow-200' :
                   'bg-slate-50 border-slate-200'
-                }`}
+                } ${selectedCountry === code ? 'ring-2 ring-teal-500' : ''}`}
+                onClick={() => setSelectedCountry(code)}
               >
                 <div className="flex items-center justify-between">
-                  <Text strong className="text-sm">{code}</Text>
+                  <div>
+                    <Text className="text-xs text-slate-500 block">{code}</Text>
+                    <Text strong className="text-sm block truncate" title={getCountryName(code)}>
+                      {getCountryName(code)}
+                    </Text>
+                  </div>
                   <Text 
                     className={`text-lg font-bold ${
-                      rate >= 100 ? 'text-red-600' :
-                      rate >= 40 ? 'text-orange-600' :
-                      rate >= 20 ? 'text-yellow-600' :
+                      rate >= 40 ? 'text-red-600' :
+                      rate >= 25 ? 'text-orange-600' :
+                      rate >= 15 ? 'text-yellow-600' :
                       'text-slate-600'
                     }`}
                   >
@@ -702,18 +803,26 @@ export const TariffTrackerContent: React.FC = () => {
         </div>
         <Alert
           type="info"
-          message="These rates are in addition to base MFN duty. USMCA-compliant goods from Mexico and Canada may qualify for reduced rates."
+          message="These are IEEPA reciprocal rates only. China also has 10% fentanyl + Section 301 (7.5-100%). Mexico/Canada have 25% fentanyl tariff (USMCA-compliant goods exempt). Click a country to filter programs above."
           className="mt-4"
           showIcon
         />
+        <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+          <Calendar size={12} />
+          <span>Data last verified: {data.lastUpdated}</span>
+          <span className="text-slate-300">|</span>
+          <span>China rates per Nov 2025 trade deal (valid until Nov 10, 2026)</span>
+        </div>
       </Card>
+      </div>
 
       {/* External Resources */}
       <Card
+        className="border border-slate-200 shadow-sm"
         title={
           <Space>
             <BookOpen size={18} className="text-slate-600" />
-            <span>Official Resources & Federal Register Links</span>
+            <span>Official Resources</span>
           </Space>
         }
       >
@@ -722,11 +831,11 @@ export const TariffTrackerContent: React.FC = () => {
           dataSource={data.externalResources}
           renderItem={(resource) => (
             <List.Item>
-              <Card size="small" className="h-full">
+              <Card size="small" className="h-full border border-slate-200 shadow-sm">
                 <Space direction="vertical" size="small">
-                  <Link href={resource.url} target="_blank" className="font-medium">
+                  <Typography.Link href={resource.url} target="_blank" className="font-medium">
                     {resource.name} <ExternalLink size={12} className="inline" />
-                  </Link>
+                  </Typography.Link>
                   <Text type="secondary" className="text-sm">{resource.description}</Text>
                 </Space>
               </Card>
@@ -800,10 +909,10 @@ export const TariffTrackerContent: React.FC = () => {
               <Text strong>Affected Countries</Text>
               <div className="mt-2 flex flex-wrap gap-2">
                 {selectedProgram.affectedCountries.includes('ALL') ? (
-                  <Tag icon={<Globe size={12} />} color="purple">All Countries</Tag>
+                  <Tag icon={<Globe size={12} />} color="cyan">All Countries</Tag>
                 ) : (
                   selectedProgram.affectedCountries.map(c => (
-                    <Tag key={c}>{c}</Tag>
+                    <Tag key={c}>{getCountryName(c)} ({c})</Tag>
                   ))
                 )}
               </div>
@@ -855,6 +964,15 @@ export const TariffTrackerContent: React.FC = () => {
                   View USTR Documentation
                 </Button>
               )}
+              <Button
+                icon={<ArrowRight size={14} />}
+                onClick={() => {
+                  setDetailModalOpen(false);
+                  handleCalculateLandedCost();
+                }}
+              >
+                Calculate Landed Cost
+              </Button>
             </Space>
           </div>
         )}

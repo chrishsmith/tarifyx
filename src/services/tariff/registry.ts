@@ -57,7 +57,7 @@ export interface EffectiveTariffResult {
     ieepaRate: number;
     ieepaBreakdown: {
         baseline: number;       // Universal 10%
-        fentanyl: number;       // CN: 20%, MX/CA: 25%
+        fentanyl: number;       // CN: 10% (reduced Nov 2025), MX/CA: 25%
         reciprocal: number;     // Country-specific higher rate
     };
     

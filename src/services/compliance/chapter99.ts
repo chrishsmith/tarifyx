@@ -42,10 +42,10 @@ export const CHAPTER_99_PROGRAMS: Chapter99Program[] = [
     { prefix: '9903.01.20', name: 'IEEPA Universal Baseline', type: 'ieepa', affectedCountries: ['ALL'], notes: ['10% on nearly all imports including FTA partners!'] },
     
     // IEEPA - Fentanyl emergency tariffs (specific countries)
-    { prefix: '9903.01.24', name: 'IEEPA Fentanyl (China)', type: 'ieepa', affectedCountries: ['CN', 'HK'], notes: ['20% emergency tariff on China'] },
-    { prefix: '9903.01.25', name: 'IEEPA Reciprocal (China)', type: 'ieepa', affectedCountries: ['CN', 'HK'], notes: ['125%+ reciprocal tariff on China'] },
-    { prefix: '9903.01.26', name: 'IEEPA Fentanyl (Mexico)', type: 'ieepa', affectedCountries: ['MX'], notes: ['25% emergency tariff (may be paused for USMCA)'] },
-    { prefix: '9903.01.27', name: 'IEEPA Fentanyl (Canada)', type: 'ieepa', affectedCountries: ['CA'], notes: ['25% emergency tariff (may be paused for USMCA)'] },
+    { prefix: '9903.01.24', name: 'IEEPA Fentanyl (China)', type: 'ieepa', affectedCountries: ['CN', 'HK'], notes: ['10% emergency tariff on China (reduced from 20% per Nov 2025 deal)'] },
+    { prefix: '9903.01.25', name: 'IEEPA Reciprocal (China)', type: 'ieepa', affectedCountries: ['CN', 'HK'], notes: ['10% reciprocal tariff on China (reduced from 125% per Nov 2025 deal, stays at 10% until Nov 2026)'] },
+    { prefix: '9903.01.26', name: 'IEEPA Fentanyl (Mexico)', type: 'ieepa', affectedCountries: ['MX'], notes: ['25% emergency tariff (active; USMCA-compliant goods exempt)'] },
+    { prefix: '9903.01.27', name: 'IEEPA Fentanyl (Canada)', type: 'ieepa', affectedCountries: ['CA'], notes: ['25% emergency tariff (active; USMCA-compliant goods exempt)'] },
     
     // Section 232 - National security
     { prefix: '9903.80', name: 'Section 232 Steel', type: 'section_232', affectedCountries: ['ALL'], notes: ['25% steel tariff'] },
@@ -209,7 +209,7 @@ export async function getLiveAdditionalDuties(
     let section232Steel: LiveTariffRate | null = null;
     let section232Aluminum: LiveTariffRate | null = null;
     
-    // USMCA countries may have IEEPA paused - treat separately
+    // USMCA countries have 25% fentanyl tariff (active since March 2025, USMCA-compliant goods exempt)
     const isUSMCA = countryOfOrigin === 'MX' || countryOfOrigin === 'CA';
     
     // China/HK - Check all programs (Section 301 + Fentanyl + Reciprocal)
@@ -225,11 +225,11 @@ export async function getLiveAdditionalDuties(
         ieepaFentanyl = ieepa.fentanyl;
         ieepaReciprocal = ieepa.reciprocal;
     }
-    // Mexico/Canada - IEEPA Fentanyl (may be paused for USMCA goods)
+    // Mexico/Canada - IEEPA Fentanyl 25% (active; USMCA-compliant goods exempt)
     else if (isUSMCA) {
         const ieepa = await fetchIEEPARatesForCountry(countryOfOrigin);
         ieepaFentanyl = ieepa.fentanyl;
-        // Note: For USMCA goods, this may be paused - add warning
+        // Note: USMCA-compliant goods are largely exempt from this tariff
     }
     // ALL OTHER COUNTRIES - Apply 10% baseline (including FTA partners!)
     else {

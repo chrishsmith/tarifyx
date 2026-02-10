@@ -80,7 +80,8 @@ function getIEEPARate(countryCode: string): number {
 }
 
 /**
- * Check if IEEPA rates may be paused for USMCA-compliant goods
+ * Check if IEEPA rates may be exempt for USMCA-compliant goods
+ * Note: 25% fentanyl tariff is active since March 2025, but USMCA-compliant goods are largely exempt
  */
 function isUSMCACountry(countryCode: string): boolean {
     return countryCode === 'MX' || countryCode === 'CA';
@@ -232,14 +233,14 @@ const FTA_COUNTRIES: Record<string, {
     'CA': { 
         name: 'USMCA', 
         rate: 0, 
-        ieepaExempt: true,  // May be exempt when USMCA-compliant
-        notes: 'USMCA goods may have tariffs paused - verify current status'
+        ieepaExempt: true,  // USMCA-compliant goods largely exempt from 25% fentanyl tariff
+        notes: '25% fentanyl tariff active — USMCA-compliant goods exempt. Non-USMCA goods face full rate.'
     },
     'MX': { 
         name: 'USMCA', 
         rate: 0, 
-        ieepaExempt: true,  // May be exempt when USMCA-compliant
-        notes: 'USMCA goods may have tariffs paused - verify current status'
+        ieepaExempt: true,  // USMCA-compliant goods largely exempt from 25% fentanyl tariff
+        notes: '25% fentanyl tariff active — USMCA-compliant goods exempt. Non-USMCA goods face full rate.'
     },
     'KR': { 
         name: 'KORUS FTA', 

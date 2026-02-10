@@ -94,8 +94,8 @@ SUPPLIER AVAILABILITY:
 
 MARKET CONTEXT (December 2025):
 - Section 301 tariffs apply to China (7.5-100% depending on product)
-- IEEPA Fentanyl: China faces 20%, Mexico/Canada may face 25% (status varies)
-- IEEPA Reciprocal: China faces 125%+ additional
+- IEEPA Fentanyl: China 10% (reduced Nov 2025), Mexico/Canada 25% (active, USMCA-compliant exempt)
+- IEEPA Reciprocal: China 10% (reduced from 125% per Nov 2025 deal, stays at 10% until Nov 2026)
 - ⚠️ CRITICAL: 10% IEEPA baseline applies to NEARLY ALL countries INCLUDING FTA partners!
   - Singapore FTA: Still faces 10% IEEPA despite FTA
   - KORUS FTA (Korea): Still faces 10%+ IEEPA

@@ -18,6 +18,7 @@ import { prisma } from '@/lib/db';
 import { compareLandedCosts } from '@/services/sourcing/landed-cost';
 import { getImportStatsByHTS, type ImportStatsByCountry } from '@/services/usitcDataWeb';
 import { getPGARequirements, PGA_AGENCIES } from '@/data/pgaFlags';
+import { formatHtsCode } from '@/utils/htsFormatting';
 import { checkADCVDWarning, getADCVDOrdersByHTS } from '@/data/adcvdOrders';
 import { isSection232Product } from '@/data/tariffPrograms';
 import type { 
@@ -296,7 +297,7 @@ async function getFallbackLandedCost(
       name: 'IEEPA Fentanyl Emergency',
       rate: tariffResult.ieepaBreakdown.fentanyl,
       amount: fentanylAmount,
-      description: 'Emergency tariff addressing fentanyl crisis (CN: 20%, MX/CA: 25%)',
+      description: 'Emergency tariff addressing fentanyl crisis (CN: 10%, MX/CA: 25%)',
       legalReference: 'Executive Order 14195',
       programType: 'ieepa_fentanyl',
     });
@@ -1050,7 +1051,7 @@ async function getComplianceChecks(
     passedChecks.push({
       category: 'adcvd',
       label: 'AD/CVD: No active orders for this HTS code/country combination',
-      detail: `No antidumping or countervailing duty orders found matching ${cleanCode} from ${getCountryName(input.countryCode)}`,
+      detail: `No antidumping or countervailing duty orders found matching ${formatHtsCode(cleanCode)} from ${getCountryName(input.countryCode)}`,
     });
   }
 
