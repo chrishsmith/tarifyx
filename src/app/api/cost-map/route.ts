@@ -116,6 +116,10 @@ interface CostMapCountry {
     dataConfidence: DataConfidence;
     /** Human-readable confidence reason */
     confidenceReason: string;
+    /** Whether the price is reliable enough to quote. False = show "Insufficient data" instead of price. */
+    priceReliable: boolean;
+    /** Reason the price is unreliable (only set when priceReliable=false) */
+    unreliableReason?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -129,6 +133,12 @@ const HIGH_VOLUME_THRESHOLD = 1_000_000;
 const MEDIUM_VOLUME_THRESHOLD = 100_000;
 const LOW_QUANTITY_THRESHOLD = 100;
 
+/**
+ * Minimum quantity to consider a price quotable.
+ * Below this, the unit price is likely a single niche shipment and not representative.
+ */
+const MIN_QUOTABLE_QUANTITY = 10;
+
 function getDataConfidence(volume: number, quantity: number): { level: DataConfidence; reason: string } {
     if (volume >= HIGH_VOLUME_THRESHOLD && quantity >= LOW_QUANTITY_THRESHOLD) {
         return { level: 'high', reason: 'High trade volume — price is well-established' };
@@ -140,6 +150,64 @@ function getDataConfidence(volume: number, quantity: number): { level: DataConfi
         return { level: 'low', reason: `Only ${quantity.toLocaleString()} units imported — price may not be representative` };
     }
     return { level: 'low', reason: `Low trade volume ($${(volume / 1000).toFixed(0)}K) — price may reflect niche shipments` };
+}
+
+/**
+ * Detect statistically unreliable prices using multiple heuristics.
+ *
+ * A price is unreliable if ANY of these are true:
+ * 1. Quantity is below MIN_QUOTABLE_QUANTITY (too few units to be meaningful)
+ * 2. Unit value is an IQR outlier (>1.5× IQR above Q3) AND confidence is not high
+ * 3. Unit value is >5× the median AND confidence is not high (catches prices that are
+ *    wildly off even when IQR is wide — e.g. $103 when median is $14)
+ *
+ * Returns a Set of country codes whose prices should be shown as "Insufficient data".
+ */
+function detectUnreliablePrices(
+    countries: Array<{ code: string; unitValue: number; importQuantity: number; dataConfidence: DataConfidence }>
+): Set<string> {
+    const unreliable = new Set<string>();
+
+    // 1. Flag countries with extremely low quantity — price is meaningless
+    for (const c of countries) {
+        if (c.importQuantity < MIN_QUOTABLE_QUANTITY) {
+            unreliable.add(c.code);
+        }
+    }
+
+    // Work with quotable countries only for statistical analysis
+    const quotable = countries.filter(c => !unreliable.has(c.code));
+    if (quotable.length < 4) return unreliable;
+
+    const sorted = [...quotable].sort((a, b) => a.unitValue - b.unitValue);
+    const q1 = sorted[Math.floor(sorted.length * 0.25)].unitValue;
+    const q3 = sorted[Math.floor(sorted.length * 0.75)].unitValue;
+    const median = sorted[Math.floor(sorted.length * 0.5)].unitValue;
+    const iqr = q3 - q1;
+
+    // 2. Standard IQR outlier fence (1.5× — the textbook definition)
+    const upperFence = q3 + 1.5 * iqr;
+    const lowerFence = Math.max(0, q1 - 1.5 * iqr);
+
+    // 3. Median-relative threshold — catches values that are absurdly far from typical
+    //    even when the IQR is wide. 5× median is generous enough to allow legitimate
+    //    variation but catches $103 when most countries are $5-$30.
+    const MEDIAN_MULTIPLIER = 5;
+    const medianCeiling = median * MEDIAN_MULTIPLIER;
+
+    for (const c of quotable) {
+        // High-confidence outliers are real — large trade volumes don't lie
+        if (c.dataConfidence === 'high') continue;
+
+        const isIqrOutlier = c.unitValue > upperFence || (lowerFence > 0 && c.unitValue < lowerFence);
+        const isMedianOutlier = median > 0 && c.unitValue > medianCeiling;
+
+        if (isIqrOutlier || isMedianOutlier) {
+            unreliable.add(c.code);
+        }
+    }
+
+    return unreliable;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -156,15 +224,16 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ success: false, error: 'hts parameter is required' }, { status: 400 });
         }
 
-        const hts6 = htsRaw.replace(/\./g, '').substring(0, 6);
-        if (!/^\d{4,6}$/.test(hts6)) {
+        const htsFull = htsRaw.replace(/\./g, '');          // full code for rate lookup (e.g. "6109100027")
+        const hts6 = htsFull.substring(0, 6);                 // 6-digit for USITC DataWeb queries
+        if (!/^\d{4,10}$/.test(htsFull) || !/^\d{4,6}$/.test(hts6)) {
             return NextResponse.json({ success: false, error: 'Invalid HTS code' }, { status: 400 });
         }
 
-        console.log(`[CostMap API] ${ts} Fetching HTS ${hts6}`);
+        console.log(`[CostMap API] ${ts} Fetching HTS ${htsFull} (DataWeb: ${hts6})`);
 
-        // 1. Get base MFN rate from HTS database
-        const baseMfnInfo = await getBaseMfnRate(hts6);
+        // 1. Get base MFN rate from HTS database — use full code so we hit the tariff_line record
+        const baseMfnInfo = await getBaseMfnRate(htsFull);
         const baseMfnRate = baseMfnInfo?.rate ?? 0;
 
         // 2. Fetch ALL countries from USITC DataWeb — low threshold, NO filtering
@@ -181,7 +250,7 @@ export async function GET(request: NextRequest) {
             const wasNormalized = stat.avgPerPieceValue !== null && stat.avgPerPieceValue !== stat.avgUnitValue;
 
             try {
-                const tariffs = await getEffectiveTariff(stat.countryCode, hts6, {
+                const tariffs = await getEffectiveTariff(stat.countryCode, htsFull, {
                     baseMfnRate: baseMfnRate || undefined,
                 });
 
@@ -230,6 +299,7 @@ export async function GET(request: NextRequest) {
                     dataYears: stat.dataYears,
                     dataConfidence: confidence.level,
                     confidenceReason: confidence.reason,
+                    priceReliable: true, // will be overwritten by detectUnreliablePrices post-processing
                 };
                 return country;
             } catch (err) {
@@ -239,20 +309,35 @@ export async function GET(request: NextRequest) {
         });
 
         const resolved = await Promise.all(promises);
-        const results: CostMapCountry[] = [];
+        const preliminary: CostMapCountry[] = [];
         for (const r of resolved) {
-            if (r) results.push(r);
+            if (r) preliminary.push(r);
         }
+
+        // Detect unreliable prices using IQR + median outlier detection + minimum quantity
+        const unreliableCodes = detectUnreliablePrices(preliminary);
+        const results: CostMapCountry[] = preliminary.map(c => {
+            if (unreliableCodes.has(c.code)) {
+                let reason: string;
+                if (c.importQuantity < MIN_QUOTABLE_QUANTITY) {
+                    reason = `Only ${c.importQuantity} unit${c.importQuantity === 1 ? '' : 's'} imported — insufficient data to quote a reliable price`;
+                } else {
+                    reason = `Price appears unusually high for this product — likely reflects niche or non-representative shipments`;
+                }
+                return { ...c, priceReliable: false, unreliableReason: reason };
+            }
+            return { ...c, priceReliable: true };
+        });
 
         // Sort by unit value (cheapest first)
         results.sort((a, b) => a.unitValue - b.unitValue);
 
-        console.log(`[CostMap API] Returning ${results.length} countries for HTS ${hts6}`);
+        console.log(`[CostMap API] Returning ${results.length} countries for HTS ${htsFull}`);
 
         return NextResponse.json({
             success: true,
             data: {
-                htsCode: hts6,
+                htsCode: htsFull,
                 baseMfnRate,
                 baseMfnRateType: baseMfnInfo?.rateType ?? 'unknown',
                 countries: results,

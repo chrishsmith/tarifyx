@@ -137,6 +137,8 @@ interface CountryData {
     dataYears: number[];
     dataConfidence: DataConfidence;
     confidenceReason: string;
+    priceReliable?: boolean;
+    unreliableReason?: string;
 }
 
 interface HoverData { country: CountryData; x: number; y: number }
@@ -154,7 +156,11 @@ export const CostMap: React.FC = () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mapRef = useRef<any>(null);
     const [mapLoaded, setMapLoaded] = useState(false);
-    const [htsInput, setHtsInput] = useState(searchParams.get('hts') || '');
+    const [htsInput, setHtsInput] = useState(() => {
+        const raw = searchParams.get('hts') || '';
+        // Display with dots for readability; fetchCountryData strips them before querying
+        return raw ? formatHtsCode(raw) : '';
+    });
     const [activeHts, setActiveHts] = useState<string | null>(null);
     const [countries, setCountries] = useState<CountryData[]>([]);
     const [loading, setLoading] = useState(false);
@@ -173,12 +179,15 @@ export const CostMap: React.FC = () => {
 
     // ─── Color helpers ──────────────────────────────────────────────────
     const valueRange = useMemo(() => {
-        const vals = countries.map(c => c.unitValue).filter(v => v > 0);
+        // Exclude unreliable countries from the color scale so outliers don't compress the range
+        const vals = countries.filter(c => c.priceReliable !== false).map(c => c.unitValue).filter(v => v > 0);
         if (vals.length === 0) return { min: 0, max: 1 };
         return { min: Math.min(...vals), max: Math.max(...vals) };
     }, [countries]);
 
     const getColor = useCallback((c: CountryData): string => {
+        // Unreliable prices get a neutral gray — they shouldn't participate in the color scale
+        if (c.priceReliable === false && colorBy === 'unitValue') return '#CBD5E1'; // slate-300
         if (colorBy === 'tariff') return getTariffColor(c.tariff.effectiveRate);
         const { min, max } = valueRange;
         const range = max - min || 1;
@@ -222,8 +231,8 @@ export const CostMap: React.FC = () => {
                 map.addSource('country-labels-src', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
                 map.addLayer({ id: 'country-fills', type: 'fill', source: 'country-costs', paint: { 'fill-color': ['get', 'fillColor'], 'fill-opacity': ['get', 'fillOpacity'] } });
-                map.addLayer({ id: 'country-borders', type: 'line', source: 'country-costs', paint: { 'line-color': '#0F172A', 'line-width': 0.8, 'line-opacity': 0.35 } });
-                map.addLayer({ id: 'country-hover', type: 'line', source: 'country-costs', paint: { 'line-color': '#0F172A', 'line-width': 2.5 }, filter: ['==', 'iso_a2', ''] });
+                map.addLayer({ id: 'country-borders', type: 'line', source: 'country-costs', paint: { 'line-color': '#94A3B8', 'line-width': 0.6, 'line-opacity': 0.3 } });
+                map.addLayer({ id: 'country-hover', type: 'line', source: 'country-costs', paint: { 'line-color': '#64748B', 'line-width': 1.8 }, filter: ['==', 'iso_a2', ''] });
                 map.addLayer({
                     id: 'country-labels', type: 'symbol', source: 'country-labels-src',
                     layout: {
@@ -358,6 +367,9 @@ export const CostMap: React.FC = () => {
                 for (const cd of countries) {
                     const coords = COUNTRY_CENTROIDS[cd.code];
                     if (!coords) continue;
+                    // Skip label entirely for unreliable prices in unit-value mode — the country
+                    // is still colored gray and hoverable, but no misleading number on the map
+                    if (cd.priceReliable === false && colorBy !== 'tariff') continue;
                     const label = colorBy === 'tariff'
                         ? `${cd.tariff.effectiveRate.toFixed(0)}%`
                         : `$${cd.unitValue.toFixed(cd.unitValue >= 100 ? 0 : cd.unitValue >= 10 ? 1 : 2)}`;
@@ -381,7 +393,7 @@ export const CostMap: React.FC = () => {
     // ─── Auto-fetch from URL ────────────────────────────────────────────
     useEffect(() => {
         const hts = searchParams.get('hts');
-        if (hts && mapLoaded && !activeHts) { setHtsInput(hts); fetchCountryData(hts); }
+        if (hts && mapLoaded && !activeHts) { setHtsInput(formatHtsCode(hts)); fetchCountryData(hts); }
     }, [searchParams, mapLoaded, activeHts, fetchCountryData]);
 
     const handleSearch = () => {
@@ -393,19 +405,25 @@ export const CostMap: React.FC = () => {
     // ─── Stats ──────────────────────────────────────────────────────────
     const stats = useMemo(() => {
         if (countries.length === 0) return null;
-        const byVal = [...countries].sort((a, b) => a.unitValue - b.unitValue);
+        // Only use reliable-priced countries for price stats — unreliable ones would skew min/max
+        const reliable = countries.filter(c => c.priceReliable !== false);
+        const byVal = [...reliable].sort((a, b) => a.unitValue - b.unitValue);
         const byTariff = [...countries].sort((a, b) => a.tariff.effectiveRate - b.tariff.effectiveRate);
         return {
-            cheapest: byVal[0],
-            priciest: byVal[byVal.length - 1],
+            cheapest: byVal[0] ?? null,
+            priciest: byVal[byVal.length - 1] ?? null,
             lowestTariff: byTariff[0],
             highestTariff: byTariff[byTariff.length - 1],
             ftaCountries: countries.filter(c => c.tariff.hasFTA),
+            reliableCount: reliable.length,
+            unreliableCount: countries.length - reliable.length,
         };
     }, [countries]);
 
     const getSavingsVsChina = (c: CountryData): { amount: number; percent: number } | null => {
         if (!chinaBaseline || c.code === 'CN' || chinaBaseline.unitValue === 0) return null;
+        // Don't compare against unreliable prices — the comparison would be meaningless
+        if (c.priceReliable === false || chinaBaseline.priceReliable === false) return null;
         const amount = chinaBaseline.unitValue - c.unitValue;
         const percent = Math.round((amount / chinaBaseline.unitValue) * 100);
         return { amount, percent };
@@ -438,6 +456,14 @@ export const CostMap: React.FC = () => {
                         <Text className="text-slate-400 text-sm">{countries.length} countries</Text>
                         {dataYears.length > 0 && <Text className="text-slate-400 text-sm">Data: {dataYears.join('–')}</Text>}
                         {displayUnit !== 'each' && <Tag color="default" className="text-xs">Prices per {displayUnit}</Tag>}
+                        {stats && stats.unreliableCount > 0 && (
+                            <Tooltip title="Countries with very few imports or statistically extreme prices are marked N/A — the data is insufficient to quote a reliable unit price.">
+                                <Tag color="default" className="text-xs cursor-help">
+                                    <AlertTriangle size={10} className="inline mr-1 text-amber-500" />
+                                    {stats.unreliableCount} with insufficient data
+                                </Tag>
+                            </Tooltip>
+                        )}
                     </div>
                 )}
             </div>
@@ -445,8 +471,14 @@ export const CostMap: React.FC = () => {
             {/* Stats */}
             {stats && (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <StatCard icon={<DollarSign size={14} />} iconColor="text-emerald-600" label="Lowest Import Price" value={stats.cheapest.name} badge={`$${stats.cheapest.unitValue.toFixed(2)}${perUnit}`} badgeColor="green" />
-                    <StatCard icon={<DollarSign size={14} />} iconColor="text-rose-500" label="Highest Import Price" value={stats.priciest.name} badge={`$${stats.priciest.unitValue.toFixed(2)}${perUnit}`} badgeColor="red" />
+                    <StatCard icon={<DollarSign size={14} />} iconColor="text-emerald-600" label="Lowest Import Price"
+                        value={stats.cheapest?.name ?? 'N/A'}
+                        badge={stats.cheapest ? `$${stats.cheapest.unitValue.toFixed(2)}${perUnit}` : 'Insufficient data'}
+                        badgeColor={stats.cheapest ? 'green' : 'default'} />
+                    <StatCard icon={<DollarSign size={14} />} iconColor="text-rose-500" label="Highest Import Price"
+                        value={stats.priciest?.name ?? 'N/A'}
+                        badge={stats.priciest ? `$${stats.priciest.unitValue.toFixed(2)}${perUnit}` : 'Insufficient data'}
+                        badgeColor={stats.priciest ? 'red' : 'default'} />
                     <StatCard icon={<TrendingDown size={14} />} iconColor="text-teal-600" label="Lowest Tariff" value={stats.lowestTariff.name} badge={`${stats.lowestTariff.tariff.effectiveRate.toFixed(1)}%`} badgeColor="cyan" />
                     <StatCard icon={<Shield size={14} />} iconColor="text-teal-700" label="FTA Partners" value={`${stats.ftaCountries.length} countries`} badge={stats.ftaCountries.slice(0, 3).map(c => c.code).join(', ') || 'None'} badgeColor="default" />
                 </div>
@@ -575,16 +607,28 @@ export const CostMap: React.FC = () => {
                                                     <span className="mr-1.5">{c.flag}</span>
                                                     <span className="font-medium text-slate-900">{c.name}</span>
                                                 </td>
-                                                <td className="px-4 py-2 text-right font-mono font-semibold text-slate-900">${c.unitValue.toFixed(2)}</td>
+                                                <td className="px-4 py-2 text-right font-mono font-semibold text-slate-900">
+                                                    {c.priceReliable !== false ? (
+                                                        `$${c.unitValue.toFixed(2)}`
+                                                    ) : (
+                                                        <Tooltip title={c.unreliableReason || 'Insufficient trade data to quote a reliable price'}>
+                                                            <span className="text-slate-400 text-xs font-sans font-normal cursor-help">Insufficient data</span>
+                                                        </Tooltip>
+                                                    )}
+                                                </td>
                                                 <td className="px-4 py-2 text-right">
                                                     <span className="inline-block px-1.5 py-0.5 rounded text-xs font-medium"
                                                         style={{ backgroundColor: getTariffColor(t.effectiveRate) + '30', color: t.effectiveRate > 30 ? '#7C2D12' : '#065F46' }}>
                                                         {t.effectiveRate.toFixed(1)}%
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-2 text-right font-mono text-rose-600 text-xs">${c.dutyPerUnit.toFixed(2)}</td>
+                                                <td className="px-4 py-2 text-right font-mono text-rose-600 text-xs">
+                                                    {c.priceReliable !== false ? `$${c.dutyPerUnit.toFixed(2)}` : <span className="text-slate-300">—</span>}
+                                                </td>
                                                 <td className="px-4 py-2 text-right">
-                                                    {savings ? (
+                                                    {c.priceReliable === false ? (
+                                                        <span className="text-slate-300 text-xs">—</span>
+                                                    ) : savings ? (
                                                         <span className={`text-xs font-medium ${savings.amount > 0 ? 'text-emerald-600' : savings.amount < 0 ? 'text-rose-600' : 'text-slate-400'}`}>
                                                             {savings.amount > 0 ? `-$${savings.amount.toFixed(2)}` : savings.amount < 0 ? `+$${Math.abs(savings.amount).toFixed(2)}` : '-'}
                                                         </span>
@@ -662,69 +706,83 @@ const HoverTooltip: React.FC<{
     const t = data.tariff;
 
     const tooltipBody = (
-        <div className="bg-slate-900 text-white rounded-xl shadow-2xl px-4 py-3 w-[290px] border border-slate-700">
+        <div className="bg-white text-slate-900 rounded-xl shadow-lg px-4 py-3 w-[290px] border border-slate-200">
             {/* Header */}
             <div className="flex items-center gap-2 mb-2">
                 <span className="text-base">{data.flag}</span>
-                <span className="font-semibold text-sm">{data.name}</span>
-                {t.hasFTA && <span className="text-[10px] bg-teal-500/20 text-teal-300 px-1.5 py-0.5 rounded-full">{t.ftaName || 'FTA'}</span>}
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ml-auto ${
-                    data.dataConfidence === 'high' ? 'bg-emerald-500/20 text-emerald-300' :
-                    data.dataConfidence === 'medium' ? 'bg-amber-500/20 text-amber-300' :
-                    'bg-rose-500/20 text-rose-300'
+                <span className="font-semibold text-sm text-slate-900">{data.name}</span>
+                {t.hasFTA && <span className="text-[10px] bg-teal-50 text-teal-700 px-1.5 py-0.5 rounded-full font-medium">{t.ftaName || 'FTA'}</span>}
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ml-auto font-medium ${
+                    data.dataConfidence === 'high' ? 'bg-emerald-50 text-emerald-700' :
+                    data.dataConfidence === 'medium' ? 'bg-amber-50 text-amber-700' :
+                    'bg-rose-50 text-rose-700'
                 }`}>
                     {data.dataConfidence === 'high' ? 'High confidence' : data.dataConfidence === 'medium' ? 'Medium confidence' : 'Low confidence'}
                 </span>
             </div>
 
             {/* Import price */}
-            <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-2xl font-bold tracking-tight">${data.unitValue.toFixed(2)}</span>
-                <span className="text-slate-400 text-xs">{perUnit} import price</span>
-            </div>
-
-            {/* Savings vs China */}
-            {savings && (
-                <div className={`text-xs font-medium mb-2 ${savings.amount > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {savings.amount > 0
-                        ? `${savings.percent}% cheaper than China (-$${savings.amount.toFixed(2)}${perUnit})`
-                        : `${Math.abs(savings.percent)}% more than China (+$${Math.abs(savings.amount).toFixed(2)}${perUnit})`}
+            {data.priceReliable !== false ? (
+                <>
+                    <div className="flex items-baseline gap-2 mb-1">
+                        <span className="text-2xl font-bold tracking-tight text-slate-900">${data.unitValue.toFixed(2)}</span>
+                        <span className="text-slate-500 text-xs">{perUnit} import price</span>
+                    </div>
+                    {savings && (
+                        <div className={`text-xs font-medium mb-2 ${savings.amount > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {savings.amount > 0
+                                ? `${savings.percent}% cheaper than China (-$${savings.amount.toFixed(2)}${perUnit})`
+                                : `${Math.abs(savings.percent)}% more than China (+$${Math.abs(savings.amount).toFixed(2)}${perUnit})`}
+                        </div>
+                    )}
+                </>
+            ) : (
+                <div className="mb-2 py-2 px-3 bg-slate-50 rounded-lg border border-slate-200">
+                    <div className="flex items-center gap-1.5 text-sm font-medium text-slate-600 mb-0.5">
+                        <AlertTriangle size={14} className="text-amber-500" />
+                        Insufficient data to quote price
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                        {data.unreliableReason || 'Too few imports to establish a reliable unit price.'}
+                    </div>
                 </div>
             )}
 
             {/* Full tariff breakdown */}
-            <div className="border-t border-slate-700 pt-2 mt-1 space-y-1">
+            <div className="border-t border-slate-200 pt-2 mt-1 space-y-1">
                 <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mb-1">Tariff Breakdown</div>
                 <TariffRow label="Base MFN" rate={t.baseMfnRate} />
-                {t.ftaDiscount > 0 && <TariffRow label={`FTA (${t.ftaName})`} rate={-t.ftaDiscount} color="text-emerald-400" />}
+                {t.ftaDiscount > 0 && <TariffRow label={`FTA (${t.ftaName})`} rate={-t.ftaDiscount} color="text-emerald-600" />}
                 {t.ieepaBaseline > 0 && <TariffRow label="IEEPA Baseline" rate={t.ieepaBaseline} />}
                 {t.ieepaFentanyl > 0 && <TariffRow label="IEEPA Fentanyl" rate={t.ieepaFentanyl} />}
                 {t.ieepaReciprocal > 0 && <TariffRow label="IEEPA Reciprocal" rate={t.ieepaReciprocal} />}
-                {t.section301Rate > 0 && <TariffRow label="Section 301" rate={t.section301Rate} color="text-rose-400" />}
-                {t.section232Rate > 0 && <TariffRow label={`Section 232 (${t.section232Product})`} rate={t.section232Rate} color="text-amber-400" />}
-                {t.adcvdRate > 0 && <TariffRow label="AD/CVD" rate={t.adcvdRate} color="text-rose-400" />}
-                <div className="flex justify-between text-xs font-semibold pt-1 border-t border-slate-700">
-                    <span>Effective Rate</span>
-                    <span style={{ color: t.effectiveRate > 30 ? '#FCA5A5' : t.effectiveRate > 10 ? '#FDE68A' : '#99F6E4' }}>
+                {t.section301Rate > 0 && <TariffRow label="Section 301" rate={t.section301Rate} color="text-rose-600" />}
+                {t.section232Rate > 0 && <TariffRow label={`Section 232 (${t.section232Product})`} rate={t.section232Rate} color="text-amber-600" />}
+                {t.adcvdRate > 0 && <TariffRow label="AD/CVD" rate={t.adcvdRate} color="text-rose-600" />}
+                <div className="flex justify-between text-xs font-semibold pt-1 border-t border-slate-200">
+                    <span className="text-slate-900">Effective Rate</span>
+                    <span style={{ color: t.effectiveRate > 30 ? '#E11D48' : t.effectiveRate > 10 ? '#D97706' : '#0D9488' }}>
                         {t.effectiveRate.toFixed(1)}%
                     </span>
                 </div>
-                <div className="flex justify-between text-[11px] text-slate-400">
-                    <span>Duty{perUnit}</span>
-                    <span className="text-rose-400">${data.dutyPerUnit.toFixed(2)}</span>
-                </div>
+                {data.priceReliable !== false && (
+                    <div className="flex justify-between text-[11px]">
+                        <span className="text-slate-500">Duty{perUnit}</span>
+                        <span className="text-rose-600 font-medium">${data.dutyPerUnit.toFixed(2)}</span>
+                    </div>
+                )}
             </div>
 
             {/* Confidence + Warnings */}
             {(data.dataConfidence !== 'high' || t.warnings.length > 0) && (
-                <div className="mt-2 pt-1 border-t border-slate-700 space-y-0.5">
+                <div className="mt-2 pt-1 border-t border-slate-200 space-y-0.5">
                     {data.dataConfidence !== 'high' && (
-                        <div className="flex items-start gap-1 text-[10px] text-amber-400">
+                        <div className="flex items-start gap-1 text-[10px] text-amber-600">
                             <Info size={10} className="mt-0.5 shrink-0" /><span>{data.confidenceReason}</span>
                         </div>
                     )}
                     {t.warnings.map((w, i) => (
-                        <div key={i} className="flex items-start gap-1 text-[10px] text-amber-400">
+                        <div key={i} className="flex items-start gap-1 text-[10px] text-amber-600">
                             <AlertTriangle size={10} className="mt-0.5 shrink-0" /><span>{w}</span>
                         </div>
                     ))}
@@ -732,15 +790,15 @@ const HoverTooltip: React.FC<{
             )}
 
             {/* Footer */}
-            <div className="flex items-center gap-3 text-[11px] text-slate-500 pt-1.5 mt-1 border-t border-slate-700">
+            <div className="flex items-center gap-3 text-[11px] text-slate-400 pt-1.5 mt-1 border-t border-slate-200">
                 <span className="flex items-center gap-1"><Clock size={10} />{data.transitDays}d transit</span>
                 <span>{formatVolume(data.importVolume)} volume</span>
             </div>
         </div>
     );
 
-    const arrowDown = <div className="w-3 h-3 bg-slate-900 rotate-45 mx-auto -mt-1.5 border-r border-b border-slate-700" />;
-    const arrowUp = <div className="w-3 h-3 bg-slate-900 rotate-45 mx-auto -mb-1.5 border-l border-t border-slate-700" />;
+    const arrowDown = <div className="w-3 h-3 bg-white rotate-45 mx-auto -mt-1.5 border-r border-b border-slate-200" />;
+    const arrowUp = <div className="w-3 h-3 bg-white rotate-45 mx-auto -mb-1.5 border-l border-t border-slate-200" />;
 
     return (
         <div className="absolute z-30 pointer-events-none" style={{ left, top, transform: fitsAbove ? 'translate(-50%, -100%)' : 'translate(-50%, 0%)' }}>
@@ -751,8 +809,8 @@ const HoverTooltip: React.FC<{
 
 const TariffRow: React.FC<{ label: string; rate: number; color?: string }> = ({ label, rate, color }) => (
     <div className="flex justify-between text-[11px]">
-        <span className="text-slate-400">{label}</span>
-        <span className={color || 'text-slate-300'}>{rate > 0 ? '+' : ''}{rate.toFixed(1)}%</span>
+        <span className="text-slate-500">{label}</span>
+        <span className={color || 'text-slate-700'}>{rate > 0 ? '+' : ''}{rate.toFixed(1)}%</span>
     </div>
 );
 
