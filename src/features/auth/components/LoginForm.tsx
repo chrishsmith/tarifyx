@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Form, Input, Button, Checkbox, message, Divider, Tabs } from 'antd';
 import { User, Lock, ArrowRight, Github } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { authClient } from '@/lib/auth-client';
 
 export const LoginForm: React.FC = () => {
@@ -119,9 +120,9 @@ export const LoginForm: React.FC = () => {
                             <Form.Item name="remember" valuePropName="checked" noStyle>
                                 <Checkbox>Remember me</Checkbox>
                             </Form.Item>
-                            <a href="#" className="text-teal-600 hover:text-teal-700 font-medium text-sm">
+                            <Link href="/forgot-password" className="text-teal-600 hover:text-teal-700 font-medium text-sm">
                                 Forgot password?
-                            </a>
+                            </Link>
                         </div>
                     </Form.Item>
                 )}
