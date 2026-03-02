@@ -3,7 +3,7 @@ import { Metadata } from 'next';
 import OnboardingPageContent from '@/features/onboarding/components/OnboardingPageContent';
 
 export const metadata: Metadata = {
-    title: 'Onboarding - Sourcify',
+    title: 'Onboarding - Tarifyx',
     description: 'Set up your trade profile',
 };
 

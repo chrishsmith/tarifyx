@@ -2,102 +2,106 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Button, Card, Typography, Tag } from 'antd';
-import { ShieldCheck, Search, TrendingUp, Anchor } from 'lucide-react';
+import { Button, Typography, Tag } from 'antd';
+import { ShieldCheck, Search, TrendingUp, Anchor, ArrowRight, DollarSign } from 'lucide-react';
 
 const { Title, Paragraph, Text } = Typography;
 
 export default function Home() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-24">
-      {/* Background decoration */}
-      <div className="fixed inset-0 z-0 pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-teal-400/20 blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-400/20 blur-[120px]" />
-      </div>
-
-      {/* Navigation */}
-      <div className="fixed top-6 right-6 z-50">
-        <Link href="/login">
-          <Button type="default" size="large" className="bg-white/70 backdrop-blur-md border border-white/50 shadow-md font-medium text-slate-700 hover:text-teal-600">
-            Sign In
-          </Button>
-        </Link>
-      </div>
-
-      <div className="relative z-10 flex flex-col items-center gap-12 max-w-4xl text-center">
-
-        {/* Hero Section */}
-        <div className="flex flex-col items-center">
-          <div className="flex items-center justify-center mb-8">
-            <div className="bg-white/70 backdrop-blur-xl border border-white/50 shadow-xl shadow-slate-200/50 p-4 rounded-2xl animate-bounce-slow">
-              <Anchor className="w-12 h-12 text-teal-600" />
-            </div>
+    <main className="min-h-screen bg-slate-50">
+      {/* Nav */}
+      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-sm border-b border-slate-200">
+        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Anchor className="w-6 h-6 text-teal-600" />
+            <span className="text-xl font-bold text-slate-900">Tarifyx</span>
           </div>
-          <Title level={1} style={{ margin: 0, fontWeight: 800, color: '#18181B', fontSize: '4rem', letterSpacing: '-0.02em' }}>
-            Sourcify
-          </Title>
-          <Paragraph className="text-xl text-slate-600 mt-6 max-w-2xl font-light leading-relaxed">
-            AI-Powered Trade Compliance & Intelligent Sourcing for the modern enterprise.
-          </Paragraph>
-          <div className="flex flex-wrap gap-3 justify-center mt-6">
-            <Tag variant="filled" className="bg-white/70 backdrop-blur-xl border border-white/50 shadow-xl shadow-slate-200/50 px-4 py-1.5 rounded-full text-teal-700 font-medium text-sm">Imports & Exports</Tag>
-            <Tag variant="filled" className="bg-white/70 backdrop-blur-xl border border-white/50 shadow-xl shadow-slate-200/50 px-4 py-1.5 rounded-full text-amber-700 font-medium text-sm">Tariff Optimization</Tag>
-            <Tag variant="filled" className="bg-white/70 backdrop-blur-xl border border-white/50 shadow-xl shadow-slate-200/50 px-4 py-1.5 rounded-full text-indigo-700 font-medium text-sm">Supplier Discovery</Tag>
+          <div className="flex items-center gap-4">
+            <Link href="/pricing">
+              <Button type="text" className="text-slate-600 font-medium">Pricing</Button>
+            </Link>
+            <Link href="/login">
+              <Button type="text" className="text-slate-600 font-medium">Sign In</Button>
+            </Link>
+            <Link href="/login?mode=signup">
+              <Button type="primary" className="font-medium">Get Started Free</Button>
+            </Link>
           </div>
         </div>
+      </nav>
 
-        {/* Action Area */}
-        <div className="flex gap-6">
-          <Link href="/login">
-            <Button type="primary" size="large" icon={<ShieldCheck size={20} />} className="h-14 px-8 text-lg shadow-xl shadow-teal-500/30">
-              Start Compliance Check
+      {/* Hero */}
+      <section className="max-w-6xl mx-auto px-6 pt-20 pb-16 text-center">
+        <div className="flex flex-wrap gap-2 justify-center mb-6">
+          <Tag color="cyan" className="px-3 py-0.5 rounded-full text-sm font-medium">27K+ HTS Codes</Tag>
+          <Tag color="cyan" className="px-3 py-0.5 rounded-full text-sm font-medium">199 Countries</Tag>
+          <Tag color="cyan" className="px-3 py-0.5 rounded-full text-sm font-medium">90%+ Accuracy</Tag>
+        </div>
+        <Title level={1} style={{ margin: 0, fontWeight: 800, color: '#0F172A', fontSize: '3.5rem', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+          Stop overpaying<br />on import duties
+        </Title>
+        <Paragraph className="text-xl text-slate-500 mt-6 max-w-2xl mx-auto leading-relaxed">
+          AI-powered HTS classification, landed cost calculation, and tariff optimization — so you know exactly what you owe before goods ship.
+        </Paragraph>
+        <div className="flex gap-4 justify-center mt-8">
+          <Link href="/login?mode=signup">
+            <Button type="primary" size="large" icon={<ArrowRight size={18} />} iconPosition="end" className="h-12 px-8 text-base font-semibold shadow-sm">
+              Classify Your First Product
             </Button>
           </Link>
-          <Link href="/login">
-            <Button size="large" icon={<Search size={20} />} className="h-14 px-8 text-lg bg-white/70 backdrop-blur-xl border border-white/50 shadow-xl shadow-slate-200/50 hover:bg-white/80">
-              Explore Suppliers
+          <Link href="/pricing">
+            <Button size="large" className="h-12 px-8 text-base font-medium border-slate-300 text-slate-700">
+              See Pricing
             </Button>
           </Link>
         </div>
+      </section>
 
-        {/* Feature Grid Verification */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-8 w-full">
-          <div className="bg-white/60 backdrop-blur-md border border-white/60 shadow-lg shadow-slate-200/40 rounded-3xl p-8 text-left group">
-            <div className="flex flex-col gap-4">
-              <div className="w-12 h-12 bg-teal-50 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform text-teal-600">
-                <ShieldCheck size={24} />
-              </div>
-              <div>
-                <Text strong className="text-lg block mb-1">AI Classifications</Text>
-                <Text type="secondary" className="text-sm">Automated HTS & Schedule B codes with 98% accuracy.</Text>
-              </div>
+      {/* Features */}
+      <section className="max-w-6xl mx-auto px-6 pb-24">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+            <div className="w-10 h-10 bg-teal-50 rounded-lg flex items-center justify-center mb-4">
+              <ShieldCheck size={20} className="text-teal-600" />
             </div>
+            <Text strong className="text-base block mb-1 text-slate-900">AI Classification</Text>
+            <Text className="text-sm text-slate-500">Get the right HTS code in seconds with V10 engine accuracy.</Text>
           </div>
-          <div className="bg-white/60 backdrop-blur-md border border-white/60 shadow-lg shadow-slate-200/40 rounded-3xl p-8 text-left group">
-            <div className="flex flex-col gap-4">
-              <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform text-amber-600">
-                <TrendingUp size={24} />
-              </div>
-              <div>
-                <Text strong className="text-lg block mb-1">Tariff Monitoring</Text>
-                <Text type="secondary" className="text-sm">Real-time alerts on duty rate changes and trade policies.</Text>
-              </div>
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+            <div className="w-10 h-10 bg-teal-50 rounded-lg flex items-center justify-center mb-4">
+              <DollarSign size={20} className="text-teal-600" />
             </div>
+            <Text strong className="text-base block mb-1 text-slate-900">Landed Cost</Text>
+            <Text className="text-sm text-slate-500">Full duty stack: MFN + Section 301 + IEEPA + Section 232 + AD/CVD.</Text>
           </div>
-          <div className="bg-white/60 backdrop-blur-md border border-white/60 shadow-lg shadow-slate-200/40 rounded-3xl p-8 text-left group">
-            <div className="flex flex-col gap-4">
-              <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform text-indigo-600">
-                <Search size={24} />
-              </div>
-              <div>
-                <Text strong className="text-lg block mb-1">Supplier Sourcing</Text>
-                <Text type="secondary" className="text-sm">Access 11M+ verified suppliers filtered by capabilities.</Text>
-              </div>
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+            <div className="w-10 h-10 bg-teal-50 rounded-lg flex items-center justify-center mb-4">
+              <TrendingUp size={20} className="text-teal-600" />
             </div>
+            <Text strong className="text-base block mb-1 text-slate-900">Country Comparison</Text>
+            <Text className="text-sm text-slate-500">Compare sourcing costs across 199 countries with real USITC data.</Text>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+            <div className="w-10 h-10 bg-teal-50 rounded-lg flex items-center justify-center mb-4">
+              <Search size={20} className="text-teal-600" />
+            </div>
+            <Text strong className="text-base block mb-1 text-slate-900">Compliance</Text>
+            <Text className="text-sm text-slate-500">Denied party screening, FTA qualification, and tariff monitoring.</Text>
           </div>
         </div>
-      </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-slate-200 py-8">
+        <div className="max-w-6xl mx-auto px-6 flex items-center justify-between text-sm text-slate-400">
+          <span>&copy; {new Date().getFullYear()} Tarifyx</span>
+          <div className="flex gap-6">
+            <Link href="/pricing" className="hover:text-slate-600">Pricing</Link>
+            <Link href="/login" className="hover:text-slate-600">Sign In</Link>
+          </div>
+        </div>
+      </footer>
     </main>
   );
 }

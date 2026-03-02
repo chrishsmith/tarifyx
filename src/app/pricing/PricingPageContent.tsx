@@ -23,7 +23,7 @@ const TIERS = [
         name: 'Free',
         price: '$0',
         period: 'forever',
-        description: 'Perfect for trying out Sourcify and occasional lookups.',
+        description: 'Perfect for trying out Tarifyx and occasional lookups.',
         cta: 'Get Started',
         ctaHref: '/dashboard/classifications',
         highlight: false,
@@ -64,7 +64,7 @@ const TIERS = [
         period: '/month',
         description: 'For teams managing large catalogs with advanced needs.',
         cta: 'Contact Sales',
-        ctaHref: 'mailto:sales@sourcify.dev',
+        ctaHref: 'mailto:sales@tarifyx.dev',
         highlight: false,
         features: [
             { text: 'Everything in Pro', included: true },
@@ -164,7 +164,7 @@ export function PricingPageContent() {
                             <div className="bg-teal-600 p-2 rounded-lg">
                                 <Anchor className="w-5 h-5 text-white" />
                             </div>
-                            <span className="font-semibold text-lg text-slate-900">Sourcify</span>
+                            <span className="font-semibold text-lg text-slate-900">Tarifyx</span>
                         </Link>
                         <div className="flex items-center gap-4">
                             <Link 
@@ -426,7 +426,7 @@ export function PricingPageContent() {
                             Get Started Free
                         </Link>
                         <Link
-                            href="mailto:sales@sourcify.dev"
+                            href="mailto:sales@tarifyx.dev"
                             className="inline-flex items-center justify-center gap-2 bg-teal-500/20 text-white border border-teal-400/50 px-8 py-3 rounded-lg font-semibold hover:bg-teal-500/30 transition-colors"
                         >
                             Talk to Sales
@@ -442,10 +442,10 @@ export function PricingPageContent() {
                     <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                         <div className="flex items-center gap-2">
                             <Anchor size={20} className="text-teal-600" />
-                            <span className="font-medium text-slate-900">Sourcify</span>
+                            <span className="font-medium text-slate-900">Tarifyx</span>
                         </div>
                         <p className="text-sm text-slate-500">
-                            © 2026 Sourcify. All rights reserved.
+                            © 2026 Tarifyx. All rights reserved.
                         </p>
                     </div>
                 </div>

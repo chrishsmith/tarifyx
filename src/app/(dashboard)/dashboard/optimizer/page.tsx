@@ -3,7 +3,7 @@ import { Metadata } from 'next';
 import { DutyOptimizerContent } from '@/features/compliance/components/DutyOptimizerContent';
 
 export const metadata: Metadata = {
-    title: 'Duty Optimizer - Sourcify',
+    title: 'Duty Optimizer - Tarifyx',
     description: 'Find all applicable HTS codes and optimize your duty rates',
 };
 

@@ -3,7 +3,7 @@ import { Metadata } from 'next';
 import MonitoringPageContent from '@/features/compliance/components/MonitoringPageContent';
 
 export const metadata: Metadata = {
-    title: 'Tariff Monitoring - Sourcify',
+    title: 'Tariff Monitoring - Tarifyx',
     description: 'Track duty rate changes and trade policies',
 };
 
