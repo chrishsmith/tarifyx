@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { getHtsCostData, aggregateAllHtsCosts, aggregateHtsCosts, saveAggregatedCosts } from '@/services/hts/cost-aggregation';
 import { prisma } from '@/lib/db';
 
@@ -63,6 +64,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+    const authResult = await requireAdmin();
+    if (isAuthError(authResult)) return authResult;
+
     try {
         const body = await request.json();
         const action = body.action;

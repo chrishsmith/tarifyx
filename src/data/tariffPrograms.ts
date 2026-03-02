@@ -372,7 +372,12 @@ export const SECTION_232_PROGRAMS: TariffProgram[] = [
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * COUNTRY TARIFF PROFILES - Updated December 2025
+ * COUNTRY TARIFF PROFILES - Static reference data
+ * 
+ * @deprecated The database (CountryTariffProfile table) is now the single source
+ * of truth for all tariff rates. This static data is kept as reference only.
+ * Rates are seeded into the DB by registry-sync.ts and updated via
+ * POST /api/tariff-registry/update-rate.
  * 
  * IMPORTANT: As of April 2025, a universal 10% IEEPA reciprocal baseline
  * applies to NEARLY ALL countries, including FTA partners!
@@ -605,11 +610,13 @@ export const COUNTRY_TARIFF_PROFILES: CountryTariffSummary[] = [
         countryCode: 'IN',
         countryName: 'India',
         flag: '🇮🇳',
-        tradeStatus: 'elevated',  // Changed - has higher reciprocal rate
+        tradeStatus: 'elevated',
         applicablePrograms: ['ieepa_reciprocal_baseline'],
-        totalAdditionalRate: 26,  // Higher reciprocal rate for India
+        totalAdditionalRate: 18,  // Reduced from 26% per Feb 2026 deal (oil penalty removed)
         notes: [
-            '⚠️ 26% reciprocal tariff rate (not just 10%)',
+            '⚠️ 18% reciprocal tariff rate (reduced from 26% in Feb 2026)',
+            'Oil-related 25% punitive tariff (Aug 2025) revoked',
+            'India agreed to limit Russian oil imports and reduce trade barriers',
             'GSP eligibility suspended',
             'Check for AD/CVD on specific products',
         ],
@@ -738,6 +745,12 @@ export function getCountryPrograms(countryCode: string): TariffProgram[] {
 
 /**
  * Get country-specific reciprocal tariff rate
+ * 
+ * @deprecated Use the database (CountryTariffProfile.reciprocalRate) as the single
+ * source of truth. This static lookup is kept only as a reference/fallback.
+ * Rates are seeded into the DB by registry-sync.ts and can be updated via
+ * POST /api/tariff-registry/update-rate.
+ * 
  * These are the "reciprocal tariff" rates announced in April 2025
  * Some countries face higher rates than the 10% baseline
  */
@@ -759,7 +772,7 @@ export function getCountryReciprocalRate(countryCode: string): number {
         'BD': 37,
         'TH': 36,
         'ID': 32,
-        'IN': 26,
+        'IN': 18,   // Reduced from 26% per Feb 2026 deal (oil penalty removed)
         'MY': 24,
         'KR': 25,  // KORUS FTA but baseline applies
         'JP': 24,

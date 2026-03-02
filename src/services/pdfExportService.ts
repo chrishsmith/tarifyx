@@ -9,6 +9,7 @@ import {
     pdf,
 } from '@react-pdf/renderer';
 import React, { createElement } from 'react';
+import { getCountryName } from '@/components/shared/constants';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES - matching ClassificationV10 interfaces
@@ -336,24 +337,6 @@ const styles = StyleSheet.create({
 // HELPER COMPONENTS
 // ═══════════════════════════════════════════════════════════════════════════
 
-const COUNTRY_NAMES: Record<string, string> = {
-    'CN': 'China',
-    'MX': 'Mexico',
-    'VN': 'Vietnam',
-    'IN': 'India',
-    'DE': 'Germany',
-    'JP': 'Japan',
-    'KR': 'South Korea',
-    'TW': 'Taiwan',
-    'TH': 'Thailand',
-    'ID': 'Indonesia',
-    'CA': 'Canada',
-    'GB': 'United Kingdom',
-};
-
-const getCountryName = (code: string): string => {
-    return COUNTRY_NAMES[code] || code;
-};
 
 const formatDate = (date?: Date): string => {
     const d = date || new Date();

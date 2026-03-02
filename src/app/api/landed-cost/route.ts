@@ -9,8 +9,10 @@
  */
 
 import { NextResponse } from 'next/server';
+import { rateLimitByIP } from '@/lib/rate-limit';
 import { prisma } from '@/lib/db';
 import { getEffectiveTariff, convertToLegacyFormat } from '@/services/tariff/registry';
+import { getBaseMfnRate } from '@/services/hts/database';
 
 // MPF: 0.3464% of value, min $33.58, max $651.50
 // Updated for FY2026 (effective Oct 1, 2025) per CBP Dec 25-10
@@ -85,6 +87,9 @@ function calculateHMF(productValue: number, isOcean: boolean): number {
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
+    const limited = rateLimitByIP(request);
+    if (limited) return limited;
+
     try {
         const body = await request.json() as LandedCostRequest;
         
@@ -116,7 +121,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         // Clean HTS code
         const cleanHts = htsCode.replace(/\./g, '');
         
-        // Get HTS description from database
+        // Get HTS description from database (try exact match, then truncate)
         const htsRecord = await prisma.htsCode.findFirst({
             where: {
                 OR: [
@@ -131,13 +136,13 @@ export async function POST(request: Request): Promise<NextResponse> {
         
         const htsDescription = htsRecord?.description ?? 'Unknown product';
         
-        // Get base MFN rate from HTS record
+        // Get base MFN rate using proper hierarchy-aware lookup
+        // This walks up the HTS tree (10→8→6→4 digit) to find the rate,
+        // handling "Free", ad valorem, compound, and specific rates correctly
         let baseMfnRate = 0;
-        if (htsRecord?.generalRate) {
-            const rateMatch = htsRecord.generalRate.match(/(\d+\.?\d*)%/);
-            if (rateMatch) {
-                baseMfnRate = parseFloat(rateMatch[1]);
-            }
+        const mfnResult = await getBaseMfnRate(cleanHts);
+        if (mfnResult) {
+            baseMfnRate = mfnResult.rate;
         }
         
         // Get effective tariff from registry
@@ -155,7 +160,7 @@ export async function POST(request: Request): Promise<NextResponse> {
             productValue
         );
         
-        // Calculate duties
+        // US customs assesses duties on transaction value (FOB), not CIF
         const baseMfnDuty = productValue * (tariffResult.baseMfnRate / 100);
         const additionalDutiesRate = tariffResult.totalAdditionalDuties;
         const additionalDuties = productValue * (additionalDutiesRate / 100);

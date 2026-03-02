@@ -507,7 +507,7 @@ export async function recalculateTotalRate(countryCode: string): Promise<number>
 
 /**
  * Convert EffectiveTariffResult to legacy EffectiveTariffRate format
- * Used by /api/classify routes for backward compatibility with TariffBreakdown.tsx
+ * Used by landed-cost and engine-v10 routes for TariffBreakdown.tsx compatibility
  * 
  * @param result - The EffectiveTariffResult from getEffectiveTariff()
  * @param htsCode - The HTS code being classified

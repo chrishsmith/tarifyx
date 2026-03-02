@@ -7,23 +7,36 @@
  */
 
 import { NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 import { prisma } from '@/lib/db';
+import { auth } from '@/lib/auth';
+
+async function getAuthUserId(): Promise<string | null> {
+  try {
+    const session = await auth.api.getSession({ headers: await headers() });
+    return session?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const userId = await getAuthUserId();
+    if (!userId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
 
-    const alert = await prisma.tariffAlert.findUnique({
-      where: { id },
+    const alert = await prisma.tariffAlert.findFirst({
+      where: { id, userId },
       include: {
         savedProduct: {
-          select: {
-            id: true,
-            name: true,
-          },
+          select: { id: true, name: true },
         },
         alertEvents: {
           orderBy: { createdAt: 'desc' },
@@ -33,22 +46,13 @@ export async function GET(
     });
 
     if (!alert) {
-      return NextResponse.json(
-        { success: false, error: 'Alert not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, error: 'Alert not found' }, { status: 404 });
     }
 
-    return NextResponse.json({
-      success: true,
-      alert,
-    });
+    return NextResponse.json({ success: true, alert });
   } catch (error) {
-    console.error('Tariff alert GET error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch alert' },
-      { status: 500 }
-    );
+    console.error('[tariff-alerts/id] GET error:', error);
+    return NextResponse.json({ success: false, error: 'Failed to fetch alert' }, { status: 500 });
   }
 }
 
@@ -57,16 +61,25 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const userId = await getAuthUserId();
+    if (!userId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await request.json();
     const { isActive, alertType, threshold } = body;
 
-    // Build update data with proper typing
+    // Verify ownership before updating
+    const existing = await prisma.tariffAlert.findFirst({ where: { id, userId } });
+    if (!existing) {
+      return NextResponse.json({ success: false, error: 'Alert not found' }, { status: 404 });
+    }
+
     const updateData: {
       isActive?: boolean;
       alertType?: 'ANY_CHANGE' | 'INCREASE_ONLY' | 'DECREASE_ONLY' | 'THRESHOLD';
       threshold?: number | null;
-      lastChecked?: Date;
     } = {};
 
     if (typeof isActive === 'boolean') {
@@ -74,7 +87,7 @@ export async function PATCH(
     }
 
     if (alertType && ['ANY_CHANGE', 'INCREASE_ONLY', 'DECREASE_ONLY', 'THRESHOLD'].includes(alertType)) {
-      updateData.alertType = alertType as 'ANY_CHANGE' | 'INCREASE_ONLY' | 'DECREASE_ONLY' | 'THRESHOLD';
+      updateData.alertType = alertType as typeof updateData.alertType;
     }
 
     if (threshold !== undefined) {
@@ -86,24 +99,15 @@ export async function PATCH(
       data: updateData,
       include: {
         savedProduct: {
-          select: {
-            id: true,
-            name: true,
-          },
+          select: { id: true, name: true },
         },
       },
     });
 
-    return NextResponse.json({
-      success: true,
-      alert,
-    });
+    return NextResponse.json({ success: true, alert });
   } catch (error) {
-    console.error('Tariff alert PATCH error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to update alert' },
-      { status: 500 }
-    );
+    console.error('[tariff-alerts/id] PATCH error:', error);
+    return NextResponse.json({ success: false, error: 'Failed to update alert' }, { status: 500 });
   }
 }
 
@@ -112,21 +116,24 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const userId = await getAuthUserId();
+    if (!userId) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
 
-    await prisma.tariffAlert.delete({
-      where: { id },
-    });
+    // Verify ownership before deleting
+    const existing = await prisma.tariffAlert.findFirst({ where: { id, userId } });
+    if (!existing) {
+      return NextResponse.json({ success: false, error: 'Alert not found' }, { status: 404 });
+    }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Alert deleted',
-    });
+    await prisma.tariffAlert.delete({ where: { id } });
+
+    return NextResponse.json({ success: true, message: 'Alert deleted' });
   } catch (error) {
-    console.error('Tariff alert DELETE error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to delete alert' },
-      { status: 500 }
-    );
+    console.error('[tariff-alerts/id] DELETE error:', error);
+    return NextResponse.json({ success: false, error: 'Failed to delete alert' }, { status: 500 });
   }
 }

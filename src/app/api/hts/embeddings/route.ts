@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { 
   generateAllEmbeddings, 
   getEmbeddingStats,
@@ -43,6 +44,9 @@ export async function GET() {
  * Body: { action: 'generate' | 'test', forceRegenerate?: boolean }
  */
 export async function POST(request: NextRequest) {
+  const authResult = await requireAdmin();
+  if (isAuthError(authResult)) return authResult;
+
   try {
     const body = await request.json();
     const { action, forceRegenerate = false, query } = body;

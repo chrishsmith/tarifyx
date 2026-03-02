@@ -50,30 +50,10 @@ import {
     XCircle,
 } from 'lucide-react';
 import { LoadingState, EmptyState } from '@/components/shared';
+import { COUNTRY_OPTIONS } from '@/components/shared/constants';
 import { exportToExcel, type ExcelColumn } from '@/services/exportService';
 
 const { Title, Text, Paragraph } = Typography;
-
-// Country options for filtering
-const COUNTRY_OPTIONS = [
-    { value: 'RU', label: '🇷🇺 Russia' },
-    { value: 'CN', label: '🇨🇳 China' },
-    { value: 'IR', label: '🇮🇷 Iran' },
-    { value: 'KP', label: '🇰🇵 North Korea' },
-    { value: 'CU', label: '🇨🇺 Cuba' },
-    { value: 'SY', label: '🇸🇾 Syria' },
-    { value: 'VE', label: '🇻🇪 Venezuela' },
-    { value: 'BY', label: '🇧🇾 Belarus' },
-    { value: 'MM', label: '🇲🇲 Myanmar' },
-    { value: 'UA', label: '🇺🇦 Ukraine' },
-    { value: 'AE', label: '🇦🇪 UAE' },
-    { value: 'PK', label: '🇵🇰 Pakistan' },
-    { value: 'IQ', label: '🇮🇶 Iraq' },
-    { value: 'AF', label: '🇦🇫 Afghanistan' },
-    { value: 'LB', label: '🇱🇧 Lebanon' },
-    { value: 'YE', label: '🇾🇪 Yemen' },
-    { value: 'SD', label: '🇸🇩 Sudan' },
-];
 
 // Entity type options
 const ENTITY_TYPE_OPTIONS = [

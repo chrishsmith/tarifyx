@@ -628,8 +628,8 @@ export const ComplianceAlerts: React.FC = () => {
       <Alert
         type="info"
         showIcon
-        message="Email Integration Coming Soon"
-        description="Email notifications require server-side integration with Resend or SendGrid. Currently, alerts are stored and can be viewed in the Events tab."
+        message="In-App Alerts Active"
+        description="Alerts are tracked here and in the Events tab. Email delivery is on the roadmap."
       />
     </div>
   );

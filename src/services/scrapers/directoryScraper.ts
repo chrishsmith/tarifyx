@@ -8,6 +8,7 @@
  */
 
 import { prisma } from '@/lib/db';
+import { getCountryName } from '@/components/shared/constants';
 import {
     RawSupplierRecord,
     ScraperConfig,
@@ -311,15 +312,6 @@ function generateSlug(name: string, countryCode: string): string {
     return `${base}-${countryCode.toLowerCase()}`;
 }
 
-function getCountryName(code: string): string {
-    const names: Record<string, string> = {
-        'CN': 'China', 'VN': 'Vietnam', 'IN': 'India', 'MX': 'Mexico',
-        'TH': 'Thailand', 'ID': 'Indonesia', 'BD': 'Bangladesh', 'TR': 'Turkey',
-        'TW': 'Taiwan', 'KR': 'South Korea', 'JP': 'Japan', 'DE': 'Germany',
-        'IT': 'Italy', 'PL': 'Poland', 'GB': 'United Kingdom',
-    };
-    return names[code] || code;
-}
 
 function getCountryPhoneCode(code: string): string {
     const codes: Record<string, string> = {

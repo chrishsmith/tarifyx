@@ -25,7 +25,7 @@ const TIERS = [
         period: 'forever',
         description: 'Perfect for trying out Tarifyx and occasional lookups.',
         cta: 'Get Started',
-        ctaHref: '/dashboard/import/analyze',
+        ctaHref: '/login?mode=signup',
         highlight: false,
         features: [
             { text: '5 classifications per day', included: true },

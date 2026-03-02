@@ -6,6 +6,7 @@ import { ChevronDown, ChevronRight, Copy, Check, Info, Clock } from 'lucide-reac
 import type { ImportAnalysis } from '../types';
 import { TariffExplanationDrawer } from './TariffExplanationDrawer';
 import { formatHtsCode } from '@/utils/htsFormatting';
+import { GlossaryTerm } from '@/components/shared/GlossaryTerm';
 
 const { Text } = Typography;
 
@@ -52,7 +53,7 @@ const CollapsibleSection: React.FC<{
 
 // Simple line item - just label and amount
 const LineItem: React.FC<{
-  label: string;
+  label: React.ReactNode;
   amount: number;
   rate?: number;
   isDiscount?: boolean;
@@ -104,11 +105,11 @@ export const LandedCostSection: React.FC<LandedCostSectionProps> = ({ landedCost
   const marginImpact = landedCost.dutyAsPercentOfProduct 
     ? (landedCost.dutyAsPercentOfProduct > 0 ? `-${landedCost.dutyAsPercentOfProduct.toFixed(1)}%` : '+0%')
     : null;
-  const marginImpactColor = landedCost.dutyAsPercentOfProduct > 10 
-    ? { bg: '#FEE2E2', text: '#DC2626', border: '#FECACA' }  // Red for high impact
-    : landedCost.dutyAsPercentOfProduct > 5 
-      ? { bg: '#FEF3C7', text: '#D97706', border: '#FDE68A' }  // Yellow for medium
-      : { bg: '#DCFCE7', text: '#16A34A', border: '#BBF7D0' }; // Green for low
+  const marginImpactColor = landedCost.dutyAsPercentOfProduct > 25 
+    ? { bg: '#FEE2E2', text: '#DC2626', border: '#FECACA' }
+    : landedCost.dutyAsPercentOfProduct > 10 
+      ? { bg: '#FEF3C7', text: '#D97706', border: '#FDE68A' }
+      : { bg: '#DCFCE7', text: '#16A34A', border: '#BBF7D0' };
 
   const copyTotal = () => {
     navigator.clipboard.writeText(landedCost.total.toFixed(2));
@@ -206,8 +207,8 @@ export const LandedCostSection: React.FC<LandedCostSectionProps> = ({ landedCost
           type={hasUSMCA ? 'success' : 'warning'}
           message={
             hasUSMCA && ftaSavings > 0
-              ? `USMCA qualification saves ${formatCurrency(ftaSavings)} on this order`
-              : `Section 301 tariff adds ${landedCost.duties.layers?.find(l => l.programType === 'section_301')?.rate}% to this product`
+              ? <><GlossaryTerm term="USMCA">USMCA</GlossaryTerm> qualification saves {formatCurrency(ftaSavings)} on this order</>
+              : <><GlossaryTerm term="Section 301">Section 301</GlossaryTerm> tariff adds {landedCost.duties.layers?.find(l => l.programType === 'section_301')?.rate}% to this product</>
           }
           closable
           onClose={() => setShowInsight(false)}
@@ -223,8 +224,14 @@ export const LandedCostSection: React.FC<LandedCostSectionProps> = ({ landedCost
       {/* Product & Freight */}
       <CollapsibleSection label="Product & Freight" amount={productFreightTotal}>
         <LineItem label="Product Value (FOB)" amount={landedCost.productValue} />
-        <LineItem label="Shipping" amount={landedCost.shipping} />
-        <LineItem label="Insurance" amount={landedCost.insurance} />
+        <LineItem 
+          label={<>Shipping{landedCost.shippingIsEstimated && <span className="ml-1 text-xs text-slate-400">(est.)</span>}</>} 
+          amount={landedCost.shipping} 
+        />
+        <LineItem 
+          label={<>Insurance{landedCost.insuranceIsEstimated && <span className="ml-1 text-xs text-slate-400">(est.)</span>}</>} 
+          amount={landedCost.insurance} 
+        />
       </CollapsibleSection>
 
       {/* Duties & Tariffs */}
@@ -232,7 +239,7 @@ export const LandedCostSection: React.FC<LandedCostSectionProps> = ({ landedCost
         label={`Duties & Tariffs (${landedCost.duties.effectiveRate.toFixed(1)}%)`} 
         amount={landedCost.duties.total}
       >
-        <Text className="text-xs text-slate-400 block mb-2">Applied to dutiable value (CIF)</Text>
+        <Text className="text-xs text-slate-400 block mb-2">Applied to declared value (FOB)</Text>
         {landedCost.duties.layers?.map((layer, idx) => (
           <LineItem 
             key={idx}
@@ -249,8 +256,15 @@ export const LandedCostSection: React.FC<LandedCostSectionProps> = ({ landedCost
 
       {/* Fees */}
       <CollapsibleSection label="Fees" amount={landedCost.fees.total}>
-        <LineItem label="MPF (0.3464%)" amount={landedCost.fees.mpf} />
-        <LineItem label="HMF (0.125%)" amount={landedCost.fees.hmf} />
+        <LineItem label={<><GlossaryTerm term="MPF">MPF</GlossaryTerm> (0.3464%)</>} amount={landedCost.fees.mpf} />
+        <LineItem 
+          label={
+            landedCost.isOceanShipment === false 
+              ? <><GlossaryTerm term="HMF">HMF</GlossaryTerm> (Air — N/A)</>
+              : <><GlossaryTerm term="HMF">HMF</GlossaryTerm> (0.125%)</>
+          } 
+          amount={landedCost.fees.hmf} 
+        />
         <div className="border-t border-slate-200 pt-2 mt-2">
           <LineItem label="Total Fees" amount={landedCost.fees.total} isBold />
         </div>

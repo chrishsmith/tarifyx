@@ -70,8 +70,6 @@ export const SourcingPreview: React.FC<SourcingPreviewProps> = ({
                 const params = new URLSearchParams({ hts: htsCode });
                 if (countryOfOrigin) params.set('from', countryOfOrigin);
                 
-                console.log('[SourcingPreview] Fetching:', `/api/sourcing/quick?${params.toString()}`);
-                
                 const response = await fetch(`/api/sourcing/quick?${params.toString()}`);
                 
                 if (!response.ok) {
@@ -79,7 +77,6 @@ export const SourcingPreview: React.FC<SourcingPreviewProps> = ({
                 }
                 
                 const result = await response.json();
-                console.log('[SourcingPreview] Data received:', result);
                 setData(result.data);
             } catch (err) {
                 console.error('[SourcingPreview] Error:', err);

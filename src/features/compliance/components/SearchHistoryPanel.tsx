@@ -43,30 +43,9 @@ import type { ColumnsType } from 'antd/es/table';
 import { ClassificationResultDisplay } from './ClassificationResult';
 import type { ClassificationResult } from '@/types/classification.types';
 import { generateProductNameWithContext } from '@/utils/productNameGenerator';
+import { formatHtsCode } from '@/utils/htsFormatting';
 
 const { Title, Text, Paragraph } = Typography;
-
-// Format HTS code: 6912004400 -> 6912.00.44.00
-const formatHtsCode = (code: string): string => {
-    if (!code) return '';
-    // Remove any existing dots
-    const clean = code.replace(/\./g, '');
-    if (clean.length < 4) return clean;
-    
-    // Format: XXXX.XX.XX.XX
-    const parts = [
-        clean.slice(0, 4),           // heading
-        clean.slice(4, 6) || '00',   // subheading
-        clean.slice(6, 8) || '00',   // tariff line
-        clean.slice(8, 10),          // statistical suffix (optional)
-    ].filter(Boolean);
-    
-    // Only include the statistical suffix if it exists
-    if (clean.length <= 8) {
-        return parts.slice(0, 3).join('.');
-    }
-    return parts.join('.');
-};
 
 // Transform V10 fullResult to ClassificationResult format for display
 // Returns null if the data can't be properly transformed (to skip ClassificationResultDisplay)

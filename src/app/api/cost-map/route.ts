@@ -13,6 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { rateLimitByIP } from '@/lib/rate-limit';
 import { getImportStatsByHTS } from '@/services/usitcDataWeb';
 import { getEffectiveTariff } from '@/services/tariff/registry';
 import { getBaseMfnRate } from '@/services/hts/database';
@@ -215,6 +216,9 @@ function detectUnreliablePrices(
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function GET(request: NextRequest) {
+    const limited = rateLimitByIP(request, 30);
+    if (limited) return limited;
+
     const ts = new Date().toISOString();
     try {
         const { searchParams } = new URL(request.url);

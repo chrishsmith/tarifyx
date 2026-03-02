@@ -7,10 +7,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { rateLimitByIP } from '@/lib/rate-limit';
 import { searchHtsCodes } from '@/services/hts/database';
 import { HtsLevel } from '@prisma/client';
 
 export async function GET(request: NextRequest) {
+  const limited = rateLimitByIP(request, 120);
+  if (limited) return limited;
+
   try {
     const { searchParams } = new URL(request.url);
     

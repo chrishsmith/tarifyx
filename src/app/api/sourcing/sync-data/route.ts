@@ -6,10 +6,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { getImportStatsByHTS, syncImportStatsToDatabase } from '@/services/usitcDataWeb';
 import { prisma } from '@/lib/db';
 
 export async function POST(request: NextRequest) {
+    const authResult = await requireAdmin();
+    if (isAuthError(authResult)) return authResult;
+
     try {
         const body = await request.json();
         const { htsCode, forceRefresh } = body;

@@ -19,8 +19,6 @@ import {
     Calculator,
     Shield,
     BarChart3,
-    BellRing,
-    Globe,
 } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSession, authClient } from '@/lib/auth-client';
@@ -99,13 +97,17 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             label: 'Classify Product',
         },
         {
-            key: 'landed-cost',
+            key: 'cost-analysis',
             icon: <Calculator size={18} />,
-            label: 'Landed Cost',
+            label: 'Cost Analysis',
             children: [
                 {
                     key: '/dashboard/duties/calculator',
-                    label: 'Calculator',
+                    label: 'Landed Cost Calculator',
+                },
+                {
+                    key: '/dashboard/intelligence/cost-map',
+                    label: 'Global Cost Map',
                 },
                 {
                     key: '/dashboard/optimizer',
@@ -119,21 +121,22 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             ],
         },
         {
+            key: '/dashboard/products',
+            icon: <FolderOpen size={18} />,
+            label: 'My Products',
+        },
+        {
             key: 'compliance',
             icon: <Shield size={18} />,
             label: 'Compliance',
             children: [
                 {
                     key: '/dashboard/compliance/denied-party',
-                    label: 'Screening',
+                    label: 'Denied Party Screening',
                 },
                 {
                     key: '/dashboard/compliance/addcvd',
-                    label: 'ADD/CVD',
-                },
-                {
-                    key: '/dashboard/compliance/fta-rules',
-                    label: 'FTA Rules',
+                    label: 'ADD/CVD Lookup',
                 },
                 {
                     key: '/dashboard/compliance/fta-calculator',
@@ -146,15 +149,19 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                 },
                 {
                     key: '/dashboard/compliance/pga',
-                    label: 'PGA',
+                    label: 'PGA Requirements',
                 },
             ],
         },
         {
-            key: 'tariff-intelligence',
-            icon: <Globe size={18} />,
-            label: 'Tariff Intelligence',
+            key: 'research',
+            icon: <BarChart3 size={18} />,
+            label: 'Research',
             children: [
+                {
+                    key: '/dashboard/intelligence/trade-stats',
+                    label: 'Trade Statistics',
+                },
                 {
                     key: '/dashboard/compliance/tariff-tracker',
                     label: 'Tariff Tracker',
@@ -164,24 +171,10 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                     label: 'HTS History',
                 },
                 {
-                    key: '/dashboard/intelligence/trade-stats',
-                    label: 'Trade Stats',
-                },
-                {
-                    key: '/dashboard/intelligence/cost-map',
-                    label: 'Cost Map',
+                    key: '/dashboard/compliance/fta-rules',
+                    label: 'FTA Rules of Origin',
                 },
             ],
-        },
-        {
-            key: '/dashboard/products',
-            icon: <FolderOpen size={18} />,
-            label: (
-                <span className="flex items-center gap-2">
-                    My Products
-                    <BellRing size={12} className="text-slate-400" />
-                </span>
-            ),
         },
         {
             type: 'divider',
@@ -224,22 +217,24 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
         return pathname;
     };
     
-    // Get open sub-menus based on current path - initialize on mount and pathname change
     useEffect(() => {
         const keys: string[] = [];
-        if (pathname.startsWith('/dashboard/duties') || pathname.startsWith('/dashboard/optimizer')) {
-            keys.push('landed-cost');
+        if (pathname.startsWith('/dashboard/duties') || 
+            pathname.startsWith('/dashboard/optimizer') ||
+            pathname.startsWith('/dashboard/intelligence/cost-map')) {
+            keys.push('cost-analysis');
         }
         if (pathname.startsWith('/dashboard/compliance/denied-party') ||
             pathname.startsWith('/dashboard/compliance/addcvd') ||
-            pathname.startsWith('/dashboard/compliance/fta') ||
+            pathname.startsWith('/dashboard/compliance/fta-calculator') ||
             pathname.startsWith('/dashboard/compliance/pga')) {
             keys.push('compliance');
         }
-        if (pathname.startsWith('/dashboard/compliance/tariff-tracker') ||
+        if (pathname.startsWith('/dashboard/intelligence/trade-stats') ||
+            pathname.startsWith('/dashboard/compliance/tariff-tracker') ||
             pathname.startsWith('/dashboard/compliance/hts-history') ||
-            pathname.startsWith('/dashboard/intelligence')) {
-            keys.push('tariff-intelligence');
+            pathname.startsWith('/dashboard/compliance/fta-rules')) {
+            keys.push('research');
         }
         setOpenKeys(keys);
     }, [pathname]);
@@ -254,7 +249,10 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                 <Anchor className="w-5 h-5 text-white" />
             </div>
             {showText && (
-                <span className="font-semibold text-lg text-slate-900">Tarifyx</span>
+                <div className="flex items-center gap-2">
+                    <span className="font-semibold text-lg text-slate-900">Tarifyx</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded">Beta</span>
+                </div>
             )}
         </div>
     );
@@ -324,7 +322,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
         <Dropdown
             menu={{
                 items: [
-                    { key: 'profile', label: 'My Profile' },
+                    { key: 'profile', label: 'My Profile', onClick: () => router.push('/dashboard/settings') },
                     { type: 'divider' },
                     { 
                         key: 'logout', 

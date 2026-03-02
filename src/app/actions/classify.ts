@@ -15,7 +15,6 @@ export async function classifyProductAction(input: ClassificationInput): Promise
     const hasApiKey = !!apiKey;
 
     console.log('[Classification] API Key present:', hasApiKey);
-    console.log('[Classification] API Key prefix:', apiKey ? apiKey.substring(0, 10) + '...' : 'NONE');
 
     let result: ClassificationResult;
 

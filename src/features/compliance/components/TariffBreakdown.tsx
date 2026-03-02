@@ -4,6 +4,7 @@ import React from 'react';
 import { Card, Typography, Tag, Tooltip, Alert, Collapse } from 'antd';
 import { AlertTriangle, ExternalLink, HelpCircle, TrendingUp } from 'lucide-react';
 import type { EffectiveTariffRate } from '@/types/tariffLayers.types';
+import { GlossaryTerm } from '@/components/shared/GlossaryTerm';
 
 const { Title, Text } = Typography;
 
@@ -77,7 +78,7 @@ export const TariffBreakdown: React.FC<TariffBreakdownProps> = ({
                         >
                             {effectiveTariff.baseHtsCode}
                         </Tag>
-                        <Text strong className="text-slate-700 text-sm sm:text-base">Base MFN Rate</Text>
+                        <Text strong className="text-slate-700 text-sm sm:text-base">Base <GlossaryTerm term="MFN">MFN</GlossaryTerm> Rate</Text>
                     </div>
                     <Text strong className="text-slate-700 pl-2 sm:pl-0">
                         {effectiveTariff.baseMfnRate.rate}
@@ -152,7 +153,7 @@ export const TariffBreakdown: React.FC<TariffBreakdownProps> = ({
                     showIcon
                     icon={<AlertTriangle size={16} />}
                     className="mt-4"
-                    message={<span className="font-semibold text-sm">AD/CVD Orders May Apply</span>}
+                    message={<span className="font-semibold text-sm"><GlossaryTerm term="AD/CVD">AD/CVD</GlossaryTerm> Orders May Apply</span>}
                     description={
                         <a
                             href={effectiveTariff.adcvdWarning.lookupUrl}

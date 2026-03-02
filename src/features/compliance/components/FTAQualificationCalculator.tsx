@@ -50,8 +50,9 @@ import {
     Bookmark,
     Edit2,
 } from 'lucide-react';
-import { LoadingState, ErrorState } from '@/components/shared';
+import { COUNTRY_OPTIONS, LoadingState, ErrorState } from '@/components/shared';
 import { formatHtsCode } from '@/utils/htsFormatting';
+import { GlossaryTerm } from '@/components/shared/GlossaryTerm';
 import type { FtaRule, FtaAgreement, TariffShiftType } from '@/data/ftaRules';
 
 const { Title, Text, Paragraph } = Typography;
@@ -154,37 +155,6 @@ const FTA_OPTIONS = [
     { value: 'ILFTA', label: 'Israel FTA', countries: ['IL'] },
 ];
 
-// Country options with flags
-const COUNTRY_OPTIONS = [
-    { value: 'US', label: '🇺🇸 United States' },
-    { value: 'MX', label: '🇲🇽 Mexico' },
-    { value: 'CA', label: '🇨🇦 Canada' },
-    { value: 'KR', label: '🇰🇷 South Korea' },
-    { value: 'AU', label: '🇦🇺 Australia' },
-    { value: 'SG', label: '🇸🇬 Singapore' },
-    { value: 'CL', label: '🇨🇱 Chile' },
-    { value: 'CO', label: '🇨🇴 Colombia' },
-    { value: 'PE', label: '🇵🇪 Peru' },
-    { value: 'CR', label: '🇨🇷 Costa Rica' },
-    { value: 'DO', label: '🇩🇴 Dominican Rep.' },
-    { value: 'SV', label: '🇸🇻 El Salvador' },
-    { value: 'GT', label: '🇬🇹 Guatemala' },
-    { value: 'HN', label: '🇭🇳 Honduras' },
-    { value: 'NI', label: '🇳🇮 Nicaragua' },
-    { value: 'MA', label: '🇲🇦 Morocco' },
-    { value: 'JO', label: '🇯🇴 Jordan' },
-    { value: 'BH', label: '🇧🇭 Bahrain' },
-    { value: 'OM', label: '🇴🇲 Oman' },
-    { value: 'IL', label: '🇮🇱 Israel' },
-    { value: 'CN', label: '🇨🇳 China' },
-    { value: 'VN', label: '🇻🇳 Vietnam' },
-    { value: 'IN', label: '🇮🇳 India' },
-    { value: 'TH', label: '🇹🇭 Thailand' },
-    { value: 'ID', label: '🇮🇩 Indonesia' },
-    { value: 'DE', label: '🇩🇪 Germany' },
-    { value: 'JP', label: '🇯🇵 Japan' },
-    { value: 'TW', label: '🇹🇼 Taiwan' },
-];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HOOKS
@@ -522,7 +492,7 @@ export const FTAQualificationCalculator: React.FC = () => {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-2">
                         <Calculator className="w-6 h-6 text-teal-600" />
-                        <Title level={4} className="m-0">FTA Qualification Calculator</Title>
+                        <Title level={4} className="m-0"><GlossaryTerm term="FTA">FTA</GlossaryTerm> Qualification Calculator</Title>
                     </div>
                     <Text className="text-slate-500">
                         Determine if your product qualifies for FTA preferential rates
@@ -791,7 +761,7 @@ export const FTAQualificationCalculator: React.FC = () => {
                                     title={
                                         <span className="flex items-center gap-2">
                                             <Percent className="w-5 h-5 text-teal-600" />
-                                            Regional Value Content (RVC) Analysis
+                                            <GlossaryTerm term="RVC">Regional Value Content (RVC)</GlossaryTerm> Analysis
                                         </span>
                                     }
                                 >
@@ -922,18 +892,18 @@ export const FTAQualificationCalculator: React.FC = () => {
                                 >
                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                         <Statistic
-                                            title="MFN Rate"
+                                            title={<><GlossaryTerm term="MFN">MFN</GlossaryTerm> Rate</>}
                                             value={result.dutySavings.mfnRate}
                                             suffix="%"
                                         />
                                         <Statistic
-                                            title="FTA Rate"
+                                            title={<><GlossaryTerm term="FTA">FTA</GlossaryTerm> Rate</>}
                                             value={result.dutySavings.ftaRate}
                                             suffix="%"
                                             valueStyle={{ color: '#16a34a' }}
                                         />
                                         <Statistic
-                                            title="MFN Duty"
+                                            title={<><GlossaryTerm term="MFN">MFN</GlossaryTerm> Duty</>}
                                             value={result.dutySavings.mfnDuty}
                                             prefix="$"
                                             precision={2}

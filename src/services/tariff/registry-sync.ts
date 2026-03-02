@@ -550,6 +550,90 @@ export async function syncTariffRatesFromUSITC(): Promise<SyncResult> {
     }
     
     // ═══════════════════════════════════════════════════════════════════════════
+    // 3.5. PER-COUNTRY RECIPROCAL RATES (from Executive Order Annex)
+    // These are country-specific rates set by EO 14257 that the USITC API
+    // cannot provide (all countries share code 9903.01.20, rates differ by EO).
+    // This is the SINGLE SOURCE OF TRUTH — update here when deals change.
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    console.log('\n  [3.5/5] Syncing per-country reciprocal rates (EO 14257 Annex)...');
+    try {
+        // Per-country reciprocal rates per Executive Order 14257 (April 9, 2025)
+        // Updated as trade deals are announced. Last verified: Feb 10, 2026.
+        //
+        // IMPORTANT: These rates are NOT available via USITC API — all countries
+        // share HTS code 9903.01.20 but the actual rate varies by country per
+        // the EO Annex. We maintain them here and write to DB.
+        //
+        // Source: White House EO 14257 Annex I, subsequent modifications
+        // Federal Register: 90 FR 14197 (April 14, 2025)
+        const RECIPROCAL_RATES_BY_COUNTRY: Record<string, { rate: number; notes?: string; lastChanged?: string }> = {
+            // Countries with negotiated rate reductions
+            'IN': { rate: 18, notes: 'Reduced from 26% per Feb 2026 deal (oil penalty removed)', lastChanged: '2026-02-01' },
+            
+            // High reciprocal rate countries (Southeast Asia)
+            'KH': { rate: 49, notes: 'Highest non-China reciprocal rate' },
+            'VN': { rate: 46, notes: 'Major China alternative — significant tariff cost' },
+            'LK': { rate: 44, notes: 'Sri Lanka' },
+            'BD': { rate: 37, notes: 'Major apparel exporter' },
+            'TH': { rate: 36, notes: 'Popular manufacturing hub' },
+            'ID': { rate: 32, notes: 'Growing manufacturing base' },
+            'TW': { rate: 32, notes: 'Not treated as China for tariff purposes' },
+            'PK': { rate: 29, notes: 'Pakistan' },
+            'KR': { rate: 25, notes: 'KORUS FTA does not exempt from reciprocal rate' },
+            'MY': { rate: 24, notes: 'Electronics manufacturing hub' },
+            'JP': { rate: 24, notes: 'US-Japan Trade Agreement covers some agriculture' },
+            'PH': { rate: 17, notes: 'Lower than many Asian alternatives' },
+            
+            // EU countries (20% bloc rate)
+            'DE': { rate: 20 }, 'FR': { rate: 20 }, 'IT': { rate: 20 }, 'ES': { rate: 20 },
+            'NL': { rate: 20 }, 'BE': { rate: 20 }, 'PL': { rate: 20 }, 'IE': { rate: 20 },
+            'AT': { rate: 20 }, 'SE': { rate: 20 }, 'DK': { rate: 20 }, 'FI': { rate: 20 },
+            'PT': { rate: 20 }, 'CZ': { rate: 20 }, 'RO': { rate: 20 }, 'HU': { rate: 20 },
+            'GR': { rate: 20 }, 'BG': { rate: 20 }, 'HR': { rate: 20 }, 'SK': { rate: 20 },
+            'LT': { rate: 20 }, 'SI': { rate: 20 }, 'LV': { rate: 20 }, 'EE': { rate: 20 },
+            'CY': { rate: 20 }, 'LU': { rate: 20 }, 'MT': { rate: 20 },
+            
+            // Baseline countries (10% universal)
+            'GB': { rate: 10, notes: 'No FTA with US' },
+            'SG': { rate: 10, notes: 'Singapore FTA does not exempt from IEEPA' },
+            'AU': { rate: 10, notes: 'Australia FTA does not exempt from IEEPA' },
+            'IL': { rate: 10 }, 'CL': { rate: 10 }, 'CO': { rate: 10 }, 'PE': { rate: 10 },
+        };
+        
+        let reciprocalUpdated = 0;
+        for (const [countryCode, { rate, notes, lastChanged }] of Object.entries(RECIPROCAL_RATES_BY_COUNTRY)) {
+            try {
+                // Only update if profile exists (created by syncAllCountries)
+                const existing = await prisma.countryTariffProfile.findUnique({
+                    where: { countryCode },
+                });
+                if (!existing) continue;
+                
+                // Determine trade status based on rate
+                const tradeStatus = rate > 10 ? 'elevated' : existing.tradeStatus;
+                
+                await prisma.countryTariffProfile.update({
+                    where: { countryCode },
+                    data: {
+                        reciprocalRate: rate,
+                        tradeStatus: tradeStatus as 'normal' | 'fta' | 'elevated' | 'sanctioned',
+                        notes: notes || existing.notes,
+                        sources: { push: `EO 14257 Annex: ${rate}% reciprocal (${lastChanged || '2025-04-09'})` },
+                        lastVerified: new Date(),
+                    },
+                });
+                reciprocalUpdated++;
+            } catch (err) {
+                // Skip if country doesn't exist in DB yet
+            }
+        }
+        console.log(`    ✓ Updated reciprocal rates for ${reciprocalUpdated} countries`);
+    } catch (error) {
+        errors.push({ country: 'RECIPROCAL_RATES', error: error instanceof Error ? error.message : 'Unknown' });
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════
     // 4. SECTION 301 (China trade tariffs)
     // ═══════════════════════════════════════════════════════════════════════════
     
@@ -662,44 +746,94 @@ export async function syncTariffRatesFromUSITC(): Promise<SyncResult> {
 
 /**
  * Sync from Federal Register API for new tariff rules
+ * 
+ * Searches for recent tariff-related documents and flags potential rate changes.
+ * Specifically watches for:
+ * - Reciprocal tariff modifications (country-specific rate changes)
+ * - IEEPA executive orders and modifications
+ * - Section 301 list changes
+ * - Section 232 scope changes
+ * - Trade deal announcements that affect tariff rates
  */
 export async function syncFromFederalRegister(): Promise<{
     newRules: number;
+    rateChangeAlerts: Array<{ title: string; date: string; url: string; relevance: string }>;
     errors: string[];
 }> {
     console.log('\n📜 Checking Federal Register for new tariff rules...\n');
     
     const errors: string[] = [];
     let newRules = 0;
+    const rateChangeAlerts: Array<{ title: string; date: string; url: string; relevance: string }> = [];
     
     try {
         // Federal Register API - search for recent tariff-related documents
         const searchTerms = [
-            'reciprocal+tariff',
-            'section+301',
-            'IEEPA',
-            'section+232',
+            { term: 'reciprocal+tariff', relevance: 'May contain country-specific rate changes' },
+            { term: 'IEEPA+tariff+modification', relevance: 'IEEPA rate modifications' },
+            { term: 'IEEPA+trade+deal', relevance: 'Trade deal affecting IEEPA rates' },
+            { term: 'section+301+modification', relevance: 'Section 301 list changes' },
+            { term: 'section+232+tariff', relevance: 'Section 232 scope changes' },
         ];
         
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         const dateStr = thirtyDaysAgo.toISOString().split('T')[0];
         
-        for (const term of searchTerms) {
-            const url = `https://www.federalregister.gov/api/v1/documents.json?conditions[term]=${term}&conditions[publication_date][gte]=${dateStr}&per_page=10`;
-            
-            const response = await fetch(url);
-            if (!response.ok) continue;
-            
-            const data = await response.json();
-            const results = data.results || [];
-            
-            for (const doc of results) {
-                console.log(`  Found: ${doc.title} (${doc.publication_date})`);
-                newRules++;
+        // Keywords that suggest a rate change (not just a general mention)
+        const RATE_CHANGE_KEYWORDS = [
+            'modif', 'amend', 'revis', 'reduc', 'increas', 'suspend', 'terminat',
+            'revok', 'restor', 'adjust', 'lower', 'rais', 'exempt', 'waiv',
+            'trade deal', 'trade arrangement', 'agreement',
+        ];
+        
+        const seenDocIds = new Set<string>();
+        
+        for (const { term, relevance } of searchTerms) {
+            try {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 10000);
                 
-                // Store in database for review
-                // In production, this would parse the document and extract rate changes
+                const url = `https://www.federalregister.gov/api/v1/documents.json?conditions[term]=${term}&conditions[publication_date][gte]=${dateStr}&per_page=10`;
+                
+                const response = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeout);
+                
+                if (!response.ok) continue;
+                
+                const data = await response.json();
+                const results = data.results || [];
+                
+                for (const doc of results) {
+                    // Deduplicate across search terms
+                    if (seenDocIds.has(doc.document_number)) continue;
+                    seenDocIds.add(doc.document_number);
+                    
+                    console.log(`  Found: ${doc.title} (${doc.publication_date})`);
+                    newRules++;
+                    
+                    // Check if this looks like an actual rate change
+                    const titleLower = (doc.title || '').toLowerCase();
+                    const abstractLower = (doc.abstract || '').toLowerCase();
+                    const combined = titleLower + ' ' + abstractLower;
+                    
+                    const isRateChange = RATE_CHANGE_KEYWORDS.some(kw => combined.includes(kw));
+                    
+                    if (isRateChange) {
+                        rateChangeAlerts.push({
+                            title: doc.title,
+                            date: doc.publication_date,
+                            url: doc.html_url || `https://www.federalregister.gov/d/${doc.document_number}`,
+                            relevance,
+                        });
+                        console.log(`    ⚠️ POTENTIAL RATE CHANGE: ${doc.title}`);
+                    }
+                }
+            } catch (fetchError) {
+                // Individual search term failure shouldn't stop others
+                if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+                    console.log(`    ⏱️ Timeout for search: ${term}`);
+                }
             }
         }
         
@@ -707,8 +841,13 @@ export async function syncFromFederalRegister(): Promise<{
         errors.push(error instanceof Error ? error.message : 'Federal Register API error');
     }
     
-    console.log(`\n✅ Found ${newRules} recent tariff-related documents\n`);
-    return { newRules, errors };
+    console.log(`\n✅ Found ${newRules} recent tariff-related documents`);
+    if (rateChangeAlerts.length > 0) {
+        console.log(`⚠️  ${rateChangeAlerts.length} potential rate change(s) detected — review and update via /api/tariff-registry/update-rate`);
+    }
+    console.log('');
+    
+    return { newRules, rateChangeAlerts, errors };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -812,7 +951,7 @@ export async function getCountryStats(): Promise<{
 export async function syncTariffRegistry(): Promise<{
     countries: SyncResult;
     tariffRates: SyncResult;
-    federalRegister: { newRules: number; errors: string[] };
+    federalRegister: { newRules: number; rateChangeAlerts: Array<{ title: string; date: string; url: string; relevance: string }>; errors: string[] };
     totalDuration: number;
 }> {
     const startTime = Date.now();

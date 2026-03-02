@@ -2,8 +2,9 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import { Card, Form, Input, Select, InputNumber, Checkbox, Button, Typography, Tooltip, message } from 'antd';
-import { FileText, Save, Hash, ChevronRight, HelpCircle } from 'lucide-react';
+import { FileText, Save, Hash, ChevronRight, ChevronDown, HelpCircle, Ship } from 'lucide-react';
 import { COUNTRIES } from '@/components/shared/constants';
+import { GlossaryTerm } from '@/components/shared/GlossaryTerm';
 import type { ProductInput, ProductAttributes } from '../types';
 
 const { TextArea } = Input;
@@ -35,6 +36,7 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
   const [inputMode, setInputMode] = useState<InputMode>('describe');
   const [savedProducts, setSavedProducts] = useState<SavedProduct[]>([]);
   const [savedProductsLoading, setSavedProductsLoading] = useState(false);
+  const [showShipping, setShowShipping] = useState(false);
   const lastActionRef = useRef<number>(0);
   const inputModeOptions = [
     { value: 'describe' as const, label: 'Describe my product', icon: FileText },
@@ -105,6 +107,9 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
           pressurized: (values.pressurized as boolean) || false,
           flammable: (values.flammable as boolean) || false,
         },
+        shippingCost: (values.shippingCost as number) || undefined,
+        insuranceCost: (values.insuranceCost as number) || undefined,
+        isOceanShipment: values.shipmentType === undefined ? undefined : values.shipmentType === 'ocean',
       };
       console.info('[import_intelligence] analyze', {
         ts: new Date().toISOString(),
@@ -148,10 +153,7 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
             layout="vertical"
             onFinish={handleSubmit}
             requiredMark={false}
-            initialValues={{
-              quantity: 1000,
-              value: 10000,
-            }}
+            initialValues={{}}
           >
             <Text className="text-slate-600 text-sm">How would you like to identify your product?</Text>
             <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-2">
@@ -200,7 +202,7 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
               {inputMode === 'hts' && (
                 <Form.Item
                   name="htsCode"
-                  label={<span className="text-slate-700 font-medium">HTS Code</span>}
+                  label={<span className="text-slate-700 font-medium"><GlossaryTerm term="HTS code">HTS Code</GlossaryTerm></span>}
                   rules={[
                     { required: true, message: 'Please enter an HTS code' },
                     {
@@ -263,7 +265,7 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Form.Item
                 name="countryCode"
-                label={<span className="text-slate-700 font-medium"><span className="text-red-500">*</span> Country of Origin / Manufacturing</span>}
+                label={<span className="text-slate-700 font-medium"><span className="text-red-500">*</span> <GlossaryTerm term="Country of Origin">Country of Origin</GlossaryTerm> / Manufacturing</span>}
                 rules={[{ required: true, message: 'Required' }]}
               >
                 <Select
@@ -307,7 +309,7 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
                 <InputNumber
                   placeholder="5,000"
                   size="large"
-                  className="w-full"
+                  style={{ width: '100%' }}
                   min={0}
                   formatter={(value) => `$ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                   parser={(value) => value!.replace(/\$\s?|(,*)/g, '')}
@@ -322,12 +324,83 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
                 <InputNumber
                   placeholder="1,000"
                   size="large"
-                  className="w-full"
+                  style={{ width: '100%' }}
                   min={1}
                   formatter={(value) => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                   parser={(value) => value!.replace(/,/g, '')}
                 />
               </Form.Item>
+            </div>
+
+            {/* Shipping & Logistics (optional, collapsible) */}
+            <div className="mt-2 mb-4">
+              <button
+                type="button"
+                onClick={() => setShowShipping(!showShipping)}
+                className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-700 transition-colors"
+              >
+                <Ship size={14} />
+                Shipping &amp; Logistics (optional)
+                {showShipping
+                  ? <ChevronDown size={14} />
+                  : <ChevronRight size={14} />
+                }
+              </button>
+              {showShipping && (
+                <div className="mt-3 p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Form.Item
+                      name="shippingCost"
+                      label={<span className="text-slate-700 font-medium text-sm">Shipping Cost (USD)</span>}
+                      extra={<span className="text-xs text-slate-400">Leave blank to estimate as 5% of value</span>}
+                      className="!mb-0"
+                    >
+                      <InputNumber
+                        placeholder="Auto-estimate"
+                        style={{ width: '100%' }}
+                        min={0}
+                        step={100}
+                        prefix="$"
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      name="insuranceCost"
+                      label={<span className="text-slate-700 font-medium text-sm">Insurance Cost (USD)</span>}
+                      extra={<span className="text-xs text-slate-400">Leave blank to estimate as 0.5% of value</span>}
+                      className="!mb-0"
+                    >
+                      <InputNumber
+                        placeholder="Auto-estimate"
+                        style={{ width: '100%' }}
+                        min={0}
+                        step={25}
+                        prefix="$"
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      name="shipmentType"
+                      label={
+                        <span className="text-slate-700 font-medium text-sm inline-flex items-center gap-1">
+                          Shipment Type
+                          <Tooltip title="Ocean shipments incur Harbor Maintenance Fee (HMF) of 0.125%">
+                            <HelpCircle size={12} className="text-slate-400 cursor-help" />
+                          </Tooltip>
+                        </span>
+                      }
+                      className="!mb-0"
+                    >
+                      <Select
+                        placeholder="Default: Ocean"
+                        allowClear
+                        options={[
+                          { value: 'ocean', label: 'Ocean (includes HMF)' },
+                          { value: 'air', label: 'Air (no HMF)' },
+                        ]}
+                      />
+                    </Form.Item>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="mt-2">

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Row, Col, Typography, Tag, Progress, Dropdown, Modal, message } from 'antd';
 import type { MenuProps } from 'antd';
 import { LoadingState } from '@/components/shared/LoadingState';
+import { getCountryName } from '@/components/shared/constants';
 import {
     Sparkles,
     ChevronRight,
@@ -434,33 +435,6 @@ function formatTimeAgo(dateStr: string): string {
     return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-/** Map ISO 3166-1 alpha-2 codes to country names */
-const COUNTRY_NAMES: Record<string, string> = {
-    CN: 'China', VN: 'Vietnam', IN: 'India', BD: 'Bangladesh', TH: 'Thailand',
-    ID: 'Indonesia', MY: 'Malaysia', PH: 'Philippines', KR: 'South Korea', JP: 'Japan',
-    TW: 'Taiwan', PK: 'Pakistan', KH: 'Cambodia', MM: 'Myanmar', LK: 'Sri Lanka',
-    MX: 'Mexico', CA: 'Canada', BR: 'Brazil', CO: 'Colombia', CL: 'Chile',
-    PE: 'Peru', AR: 'Argentina', GT: 'Guatemala', HN: 'Honduras', SV: 'El Salvador',
-    CR: 'Costa Rica', DO: 'Dominican Republic', NI: 'Nicaragua', PA: 'Panama',
-    DE: 'Germany', IT: 'Italy', FR: 'France', GB: 'United Kingdom', ES: 'Spain',
-    PT: 'Portugal', NL: 'Netherlands', BE: 'Belgium', PL: 'Poland', CZ: 'Czech Republic',
-    RO: 'Romania', HU: 'Hungary', AT: 'Austria', SE: 'Sweden', DK: 'Denmark',
-    FI: 'Finland', IE: 'Ireland', CH: 'Switzerland', NO: 'Norway', GR: 'Greece',
-    TR: 'Turkey', IL: 'Israel', AE: 'UAE', SA: 'Saudi Arabia', QA: 'Qatar',
-    EG: 'Egypt', ZA: 'South Africa', NG: 'Nigeria', KE: 'Kenya', ET: 'Ethiopia',
-    GH: 'Ghana', TZ: 'Tanzania', MA: 'Morocco', TN: 'Tunisia',
-    AU: 'Australia', NZ: 'New Zealand', SG: 'Singapore', HK: 'Hong Kong',
-    US: 'United States', PR: 'Puerto Rico', JO: 'Jordan', LB: 'Lebanon',
-    UA: 'Ukraine', BG: 'Bulgaria', HR: 'Croatia', SK: 'Slovakia', SI: 'Slovenia',
-    LT: 'Lithuania', LV: 'Latvia', EE: 'Estonia', RS: 'Serbia', BA: 'Bosnia',
-    RU: 'Russia', BY: 'Belarus', KZ: 'Kazakhstan', UZ: 'Uzbekistan',
-    NP: 'Nepal', LA: 'Laos',
-};
-
-function getCountryName(code: string): string {
-    return COUNTRY_NAMES[code?.toUpperCase()] || code;
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -501,6 +475,8 @@ export const DashboardOverview = () => {
         fetchStats();
     }, []);
 
+    const isNewUser = !statsLoading && stats.totalProducts === 0 && stats.totalSearches === 0;
+
     return (
         <div className="space-y-8">
             {/* Header */}
@@ -510,6 +486,54 @@ export const DashboardOverview = () => {
                     Classify products, calculate costs, and optimize your imports.
                 </Text>
             </div>
+
+            {/* New User Welcome Guide */}
+            {isNewUser && (
+                <div className="bg-gradient-to-br from-teal-50 to-white border border-teal-200 rounded-xl p-6 shadow-sm">
+                    <Title level={4} className="!mb-1 !text-slate-900">Welcome to Tarifyx</Title>
+                    <Text className="text-slate-600 block mb-5">
+                        Get started in 4 steps — classify a product and instantly see your full duty breakdown.
+                    </Text>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <Link href="/dashboard/import/analyze" className="block">
+                            <div className="bg-white border border-slate-200 rounded-lg p-4 hover:border-teal-300 hover:shadow-sm transition-all group h-full">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <div className="w-6 h-6 rounded-full bg-teal-600 text-white flex items-center justify-center text-xs font-bold">1</div>
+                                    <Text strong className="text-sm group-hover:text-teal-700">Classify a Product</Text>
+                                </div>
+                                <Text className="text-xs text-slate-500">Describe your product and get an AI-powered HTS classification with confidence scoring.</Text>
+                            </div>
+                        </Link>
+                        <Link href="/dashboard/duties/calculator" className="block">
+                            <div className="bg-white border border-slate-200 rounded-lg p-4 hover:border-teal-300 hover:shadow-sm transition-all group h-full">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <div className="w-6 h-6 rounded-full bg-teal-600 text-white flex items-center justify-center text-xs font-bold">2</div>
+                                    <Text strong className="text-sm group-hover:text-teal-700">Calculate Landed Cost</Text>
+                                </div>
+                                <Text className="text-xs text-slate-500">See the full duty stack — MFN, Section 301, IEEPA, fees — and your total import cost.</Text>
+                            </div>
+                        </Link>
+                        <Link href="/dashboard/compliance/denied-party" className="block">
+                            <div className="bg-white border border-slate-200 rounded-lg p-4 hover:border-teal-300 hover:shadow-sm transition-all group h-full">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <div className="w-6 h-6 rounded-full bg-teal-600 text-white flex items-center justify-center text-xs font-bold">3</div>
+                                    <Text strong className="text-sm group-hover:text-teal-700">Check Compliance</Text>
+                                </div>
+                                <Text className="text-xs text-slate-500">Screen suppliers against OFAC/BIS lists and check for antidumping duties.</Text>
+                            </div>
+                        </Link>
+                        <Link href="/dashboard/products" className="block">
+                            <div className="bg-white border border-slate-200 rounded-lg p-4 hover:border-teal-300 hover:shadow-sm transition-all group h-full">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <div className="w-6 h-6 rounded-full bg-teal-600 text-white flex items-center justify-center text-xs font-bold">4</div>
+                                    <Text strong className="text-sm group-hover:text-teal-700">Monitor Tariff Changes</Text>
+                                </div>
+                                <Text className="text-xs text-slate-500">Save products to your portfolio and get alerts when tariff rates change.</Text>
+                            </div>
+                        </Link>
+                    </div>
+                </div>
+            )}
 
             {/* Stats Row */}
             <StatsRow stats={stats} loading={statsLoading} />

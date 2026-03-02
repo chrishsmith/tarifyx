@@ -2,10 +2,12 @@
  * Classification Feedback API
  * 
  * POST /api/classification-feedback - Submit user feedback on a classification
- * GET /api/classification-feedback/stats - Get feedback statistics
+ * GET /api/classification-feedback - Get feedback statistics for the authenticated user
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { headers } from 'next/headers';
+import { auth } from '@/lib/auth';
 import { 
   submitClassificationFeedback,
   getFeedbackStats,
@@ -14,11 +16,15 @@ import { FeedbackType } from '@prisma/client';
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await auth.api.getSession({ headers: await headers() });
+    if (!session?.user?.id) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     
     const {
       searchHistoryId,
-      userId,
       feedbackType,
       correctedCode,
       correctionReason,
@@ -28,7 +34,6 @@ export async function POST(request: NextRequest) {
       modelVersion,
     } = body;
     
-    // Validate required fields
     if (!searchHistoryId || !feedbackType) {
       return NextResponse.json(
         { success: false, error: 'Missing required fields: searchHistoryId, feedbackType' },
@@ -36,7 +41,6 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Validate feedback type
     if (!Object.values(FeedbackType).includes(feedbackType)) {
       return NextResponse.json(
         { success: false, error: 'Invalid feedbackType' },
@@ -44,7 +48,6 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // If corrected, require correctedCode
     if (feedbackType === 'corrected' && !correctedCode) {
       return NextResponse.json(
         { success: false, error: 'correctedCode required when feedbackType is "corrected"' },
@@ -52,7 +55,6 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Validate quality rating if provided
     if (qualityRating !== undefined && (qualityRating < 1 || qualityRating > 5)) {
       return NextResponse.json(
         { success: false, error: 'qualityRating must be between 1 and 5' },
@@ -60,10 +62,9 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Submit feedback
     const feedback = await submitClassificationFeedback({
       searchHistoryId,
-      userId,
+      userId: session.user.id,
       feedbackType,
       correctedCode,
       correctionReason,
@@ -82,10 +83,10 @@ export async function POST(request: NextRequest) {
       },
     });
     
-  } catch (error: any) {
-    console.error('[Classification Feedback API] Error:', error);
+  } catch (error: unknown) {
+    console.error('[classification-feedback] POST error:', error);
     return NextResponse.json(
-      { success: false, error: error.message || 'Internal server error' },
+      { success: false, error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }
     );
   }
@@ -93,8 +94,12 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await auth.api.getSession({ headers: await headers() });
+    if (!session?.user?.id) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId') || undefined;
     const startDate = searchParams.get('startDate') 
       ? new Date(searchParams.get('startDate')!) 
       : undefined;
@@ -103,20 +108,17 @@ export async function GET(request: NextRequest) {
       : undefined;
     
     const stats = await getFeedbackStats({
-      userId,
+      userId: session.user.id,
       startDate,
       endDate,
     });
     
-    return NextResponse.json({
-      success: true,
-      stats,
-    });
+    return NextResponse.json({ success: true, stats });
     
-  } catch (error: any) {
-    console.error('[Classification Feedback API] Error:', error);
+  } catch (error: unknown) {
+    console.error('[classification-feedback] GET error:', error);
     return NextResponse.json(
-      { success: false, error: error.message || 'Internal server error' },
+      { success: false, error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }
     );
   }

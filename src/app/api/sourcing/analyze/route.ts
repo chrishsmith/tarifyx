@@ -5,9 +5,24 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth, isAuthError } from '@/lib/api-auth';
+import { checkRateLimit } from '@/lib/rate-limit';
 import { generateSourcingRecommendations, SourcingAnalysisInput } from '@/services/sourcing/advisor';
 
+const RATE_LIMIT_PER_HOUR = 20;
+
 export async function POST(request: NextRequest) {
+    const authResult = await requireAuth();
+    if (isAuthError(authResult)) return authResult;
+
+    const { allowed, remaining, resetMs } = checkRateLimit(`sourcing:${authResult.userId}`, RATE_LIMIT_PER_HOUR);
+    if (!allowed) {
+        return NextResponse.json(
+            { success: false, error: 'Rate limit exceeded. Try again later.' },
+            { status: 429, headers: { 'Retry-After': String(Math.ceil(resetMs / 1000)), 'X-RateLimit-Remaining': String(remaining) } }
+        );
+    }
+
     try {
         const body = await request.json();
         

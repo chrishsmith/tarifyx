@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Card, Collapse, Typography, Tag, Button, Space } from 'antd';
-import { Edit, RotateCcw } from 'lucide-react';
+import { RotateCcw, ArrowRight, Shield, Calculator, Bookmark, Globe } from 'lucide-react';
 import type { ImportAnalysis } from '../types';
 import { CountryCompareSection } from './CountryCompareSection';
 import { ComplianceSection } from './ComplianceSection';
@@ -179,6 +179,43 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
           },
         ]}
       />
+
+      {/* Next Steps Guidance */}
+      <Card className="shadow-sm border-teal-200 bg-teal-50/30">
+        <div className="mb-3">
+          <Text strong className="text-base text-slate-800">What to do next</Text>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <a href="/dashboard/products" className="flex items-start gap-3 p-3 rounded-lg bg-white border border-slate-200 hover:border-teal-300 transition-colors group">
+            <Bookmark size={18} className="text-teal-600 mt-0.5 shrink-0" />
+            <div>
+              <Text strong className="text-sm group-hover:text-teal-700">Save to Portfolio</Text>
+              <Text className="text-xs text-slate-500 block">Track this product and get tariff change alerts</Text>
+            </div>
+          </a>
+          <a href="/dashboard/compliance/denied-party" className="flex items-start gap-3 p-3 rounded-lg bg-white border border-slate-200 hover:border-teal-300 transition-colors group">
+            <Shield size={18} className="text-amber-600 mt-0.5 shrink-0" />
+            <div>
+              <Text strong className="text-sm group-hover:text-teal-700">Screen Suppliers</Text>
+              <Text className="text-xs text-slate-500 block">Run denied party checks on your suppliers</Text>
+            </div>
+          </a>
+          <a href="/dashboard/duties/calculator" className="flex items-start gap-3 p-3 rounded-lg bg-white border border-slate-200 hover:border-teal-300 transition-colors group">
+            <Calculator size={18} className="text-blue-600 mt-0.5 shrink-0" />
+            <div>
+              <Text strong className="text-sm group-hover:text-teal-700">Detailed Cost Calc</Text>
+              <Text className="text-xs text-slate-500 block">Save scenarios and compare in the full calculator</Text>
+            </div>
+          </a>
+          <a href="/dashboard/compliance/fta-calculator" className="flex items-start gap-3 p-3 rounded-lg bg-white border border-slate-200 hover:border-teal-300 transition-colors group">
+            <Globe size={18} className="text-violet-600 mt-0.5 shrink-0" />
+            <div>
+              <Text strong className="text-sm group-hover:text-teal-700">Check FTA Eligibility</Text>
+              <Text className="text-xs text-slate-500 block">See if your product qualifies for duty-free treatment</Text>
+            </div>
+          </a>
+        </div>
+      </Card>
 
       {/* Start Over */}
       {onEdit && (

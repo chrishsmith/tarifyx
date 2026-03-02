@@ -21,16 +21,16 @@ export async function GET(
             headers: await headers(),
         });
 
+        if (!session?.user?.id) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         const { id } = await params;
 
-        // Allow viewing without auth (for shared links), but include user check if logged in
-        const detail = await getSearchHistoryDetail(id, session?.user?.id);
+        const detail = await getSearchHistoryDetail(id, session.user.id);
 
         if (!detail) {
-            return NextResponse.json(
-                { error: 'Search not found' },
-                { status: 404 }
-            );
+            return NextResponse.json({ error: 'Search not found' }, { status: 404 });
         }
 
         return NextResponse.json(detail);

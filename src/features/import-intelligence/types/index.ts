@@ -18,6 +18,9 @@ export interface ProductInput {
   value: number;
   quantity: number;
   attributes: ProductAttributes;
+  shippingCost?: number;
+  insuranceCost?: number;
+  isOceanShipment?: boolean;
 }
 
 export interface HtsAlternative {
@@ -101,8 +104,11 @@ export interface LandedCost {
   productValue: number;
   shipping: number;
   insurance: number;
+  shippingIsEstimated: boolean;
+  insuranceIsEstimated: boolean;
+  isOceanShipment: boolean;
   
-  // Dutiable value (CIF = FOB + Shipping + Insurance)
+  // Dutiable value (FOB product value — US customs uses transaction value, not CIF)
   dutiableValue: number;
   
   duties: DutyBreakdown;
@@ -112,13 +118,13 @@ export interface LandedCost {
   perUnit: number;
   
   // Insights
-  dutyAsPercentOfProduct: number; // How much duties add to product cost
+  dutyAsPercentOfProduct: number;
   
   // Data quality & freshness
   dataQuality: 'high' | 'medium' | 'low';
   lastUpdated: Date | string | null;
-  tariffConfidence: number; // 0-100 confidence in tariff accuracy
-  dataSource?: string; // e.g., "USITC HTS API", "Tariff Registry"
+  tariffConfidence: number;
+  dataSource?: string;
 }
 
 export interface TariffBreakdownSummary {

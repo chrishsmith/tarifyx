@@ -22,6 +22,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { 
     syncAllCountries, 
     syncTariffRatesFromUSITC,
@@ -33,6 +34,9 @@ import {
 } from '@/services/tariff/registry-sync';
 
 export async function POST(request: NextRequest) {
+    const authResult = await requireAdmin();
+    if (isAuthError(authResult)) return authResult;
+
     const { searchParams } = new URL(request.url);
     const syncType = searchParams.get('type') || 'all';
     

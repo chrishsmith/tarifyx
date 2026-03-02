@@ -36,29 +36,10 @@ import {
     RefreshCw,
 } from 'lucide-react';
 import { LoadingState, ErrorState } from '@/components/shared';
+import { COUNTRY_OPTIONS, getCountryFlag } from '@/components/shared/constants';
 import type { ADCVDOrderInfo } from '@/data/adcvdOrders';
 
 const { Title, Text, Paragraph } = Typography;
-
-// Country options for filtering
-const COUNTRY_OPTIONS = [
-    { value: 'CN', label: '🇨🇳 China', flag: '🇨🇳' },
-    { value: 'CA', label: '🇨🇦 Canada', flag: '🇨🇦' },
-    { value: 'KR', label: '🇰🇷 South Korea', flag: '🇰🇷' },
-    { value: 'JP', label: '🇯🇵 Japan', flag: '🇯🇵' },
-    { value: 'TW', label: '🇹🇼 Taiwan', flag: '🇹🇼' },
-    { value: 'VN', label: '🇻🇳 Vietnam', flag: '🇻🇳' },
-    { value: 'IN', label: '🇮🇳 India', flag: '🇮🇳' },
-    { value: 'TR', label: '🇹🇷 Turkey', flag: '🇹🇷' },
-    { value: 'BR', label: '🇧🇷 Brazil', flag: '🇧🇷' },
-    { value: 'RU', label: '🇷🇺 Russia', flag: '🇷🇺' },
-    { value: 'TH', label: '🇹🇭 Thailand', flag: '🇹🇭' },
-    { value: 'MY', label: '🇲🇾 Malaysia', flag: '🇲🇾' },
-    { value: 'ID', label: '🇮🇩 Indonesia', flag: '🇮🇩' },
-    { value: 'MX', label: '🇲🇽 Mexico', flag: '🇲🇽' },
-    { value: 'UA', label: '🇺🇦 Ukraine', flag: '🇺🇦' },
-    { value: 'DE', label: '🇩🇪 Germany', flag: '🇩🇪' },
-];
 
 interface APIResponse {
     success: boolean;
@@ -195,18 +176,6 @@ export const ADCVDLookup: React.FC = () => {
                     bgClass: 'bg-green-50 border-green-200',
                 };
         }
-    };
-
-    // Get country flag
-    const getCountryFlag = (code: string): string => {
-        const country = COUNTRY_OPTIONS.find(c => c.value === code);
-        if (country) return country.flag;
-        // Generate flag emoji from country code
-        return code
-            .toUpperCase()
-            .split('')
-            .map(char => String.fromCodePoint(127397 + char.charCodeAt(0)))
-            .join('');
     };
 
     // Copy text to clipboard

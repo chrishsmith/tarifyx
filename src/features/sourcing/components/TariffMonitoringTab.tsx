@@ -43,7 +43,7 @@ import {
     Clock,
     Zap,
 } from 'lucide-react';
-import { getCountryName, LoadingState, EmptyState } from '@/components/shared';
+import { COUNTRY_OPTIONS, getCountryName, LoadingState, EmptyState } from '@/components/shared';
 import { ProductDetailDrawer } from './ProductDetailDrawer';
 
 const { Text, Title, Paragraph } = Typography;
@@ -98,27 +98,6 @@ interface MonitoringStats {
     rateIncreases: number;
     rateDecreases: number;
 }
-
-const COUNTRY_OPTIONS = [
-    { value: 'CN', label: 'China' },
-    { value: 'VN', label: 'Vietnam' },
-    { value: 'IN', label: 'India' },
-    { value: 'MX', label: 'Mexico' },
-    { value: 'BD', label: 'Bangladesh' },
-    { value: 'ID', label: 'Indonesia' },
-    { value: 'TH', label: 'Thailand' },
-    { value: 'MY', label: 'Malaysia' },
-    { value: 'PH', label: 'Philippines' },
-    { value: 'PK', label: 'Pakistan' },
-    { value: 'KR', label: 'South Korea' },
-    { value: 'TW', label: 'Taiwan' },
-    { value: 'JP', label: 'Japan' },
-    { value: 'DE', label: 'Germany' },
-    { value: 'IT', label: 'Italy' },
-    { value: 'CA', label: 'Canada' },
-    { value: 'GB', label: 'United Kingdom' },
-    { value: 'FR', label: 'France' },
-];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RATE CHANGE INDICATOR
@@ -360,16 +339,25 @@ export const TariffMonitoringTab: React.FC<Props> = ({
             const data = await response.json();
             setProducts(data.items || []);
             
-            if (data.stats) {
-                setStats({
-                    totalProducts: data.stats.totalProducts || 0,
-                    monitoredProducts: data.stats.monitoredProducts || 0,
-                    productsWithAlerts: 0, // TODO: Calculate from alerts
-                    avgTariffRate: 0, // TODO: Calculate average
-                    rateIncreases: 0, // TODO: Count from tariff data
-                    rateDecreases: 0, // TODO: Count from tariff data
-                });
-            }
+            const items: MonitoredProduct[] = data.items || [];
+            
+            // Calculate stats from actual product data
+            const withAlerts = items.filter(p => p.alertInfo?.hasActiveAlert).length;
+            const withRates = items.filter(p => p.tariffData?.currentRate != null);
+            const avgRate = withRates.length > 0
+                ? withRates.reduce((sum, p) => sum + (p.tariffData?.currentRate || 0), 0) / withRates.length
+                : 0;
+            const increases = items.filter(p => (p.tariffData?.changePercent ?? 0) > 0).length;
+            const decreases = items.filter(p => (p.tariffData?.changePercent ?? 0) < 0).length;
+
+            setStats({
+                totalProducts: data.stats?.totalProducts || items.length,
+                monitoredProducts: data.stats?.monitoredProducts || items.filter(p => p.isMonitored).length,
+                productsWithAlerts: withAlerts,
+                avgTariffRate: Math.round(avgRate * 100) / 100,
+                rateIncreases: increases,
+                rateDecreases: decreases,
+            });
         } catch (error) {
             console.error('[TariffMonitoring] Error:', error);
             messageApi.error('Failed to load products');

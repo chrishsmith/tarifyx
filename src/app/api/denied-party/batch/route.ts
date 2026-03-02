@@ -8,6 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { prisma } from '@/lib/db';
 import { UsageFeature } from '@prisma/client';
 
@@ -185,12 +186,15 @@ async function screenParty(party: PartyToScreen): Promise<ScreeningResult> {
  * }
  */
 export async function POST(request: NextRequest): Promise<NextResponse<BatchScreeningResponse>> {
+    const authResult = await requireAuth();
+    if (isAuthError(authResult)) return authResult as NextResponse<BatchScreeningResponse>;
+
     try {
         const body = await request.json();
-        const { parties, userId } = body as {
+        const { parties } = body as {
             parties: PartyToScreen[];
-            userId?: string;
         };
+        const userId = authResult.userId;
         
         if (!parties || !Array.isArray(parties) || parties.length === 0) {
             return NextResponse.json(
@@ -228,7 +232,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<BatchScre
         // Create audit log entry
         const auditLog = await prisma.usageLog.create({
             data: {
-                userId: userId || 'anonymous',
+                userId,
                 feature: UsageFeature.batch_screening,
                 metadata: {
                     totalScreened,

@@ -5,9 +5,13 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth, isAuthError } from '@/lib/api-auth';
 import { findMatchingSuppliers, MatchCriteria } from '@/services/sourcing/supplier-matching';
 
 export async function POST(request: NextRequest) {
+    const authResult = await requireAuth();
+    if (isAuthError(authResult)) return authResult;
+
     try {
         const body = await request.json();
         

@@ -2,7 +2,6 @@ import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { PrismaClient } from "@prisma/client";
 
-// Use a standard PrismaClient for auth (Neon adapter can cause issues with Better-Auth)
 const prisma = new PrismaClient();
 
 export const auth = betterAuth({
@@ -11,10 +10,13 @@ export const auth = betterAuth({
     }),
     emailAndPassword: {
         enabled: true,
-        minPasswordLength: 6,
+        minPasswordLength: 8,
+    },
+    rateLimit: {
+        window: 60,
+        max: 10,
     },
     advanced: {
-        useSecureCookies: false, // Allow http for local dev
+        useSecureCookies: process.env.NODE_ENV === 'production',
     },
-    // We can add more providers here later (Google, GitHub, etc.)
 });

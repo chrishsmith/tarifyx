@@ -2,7 +2,11 @@
  * Tariff Tracker API
  * 
  * GET /api/tariff-tracker
- *   Returns all special tariff programs (Section 301, IEEPA, Section 232)
+ *   Returns all special tariff programs, reciprocal rates, and program data.
+ *   Now reads from the database (CountryTariffProfile) as single source of truth.
+ *   Static data from specialTariffs.ts is used only for program metadata
+ *   (descriptions, legal references, etc.) — rates come from DB.
+ * 
  *   Query params:
  *     - category: 'section_301' | 'ieepa' | 'section_232'
  *     - country: ISO 2-letter country code
@@ -11,18 +15,16 @@
  */
 
 import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/db';
 import {
   ALL_TARIFF_PROGRAMS,
   SECTION_301_PROGRAMS,
   IEEPA_PROGRAMS,
   SECTION_232_PROGRAMS,
   HTS_CHAPTER_COVERAGE,
-  IEEPA_RECIPROCAL_RATES,
   EXTERNAL_RESOURCES,
-  getTariffProgramsForCountry,
   getHtsChapterTariffs,
   calculateTotalAdditionalTariff,
-  getIEEPAReciprocalRate,
   type TariffProgram,
 } from '@/data/specialTariffs';
 
@@ -65,7 +67,6 @@ export async function GET(request: Request) {
       const chapterTariffs = getHtsChapterTariffs(chapter);
       const chapterProgramIds = chapterTariffs.map(t => t.id);
       
-      // Include IEEPA baseline/reciprocal which applies to all HTS codes
       programs = programs.filter(p => 
         chapterProgramIds.includes(p.id) ||
         p.type === 'ieepa_baseline' ||
@@ -85,10 +86,54 @@ export async function GET(request: Request) {
       calculation = calculateTotalAdditionalTariff(country, htsCode);
     }
 
-    // Get country-specific rate if country provided
-    let countryRate = null;
-    if (country) {
-      countryRate = getIEEPAReciprocalRate(country);
+    // ═══════════════════════════════════════════════════════════════════
+    // RECIPROCAL RATES: Read from DB (single source of truth)
+    // ═══════════════════════════════════════════════════════════════════
+    let reciprocalRates: Record<string, number> = {};
+    let countryRate: number | null = null;
+    let lastVerified: string | null = null;
+
+    try {
+      // Fetch all country profiles with reciprocal rates from DB
+      const profiles = await prisma.countryTariffProfile.findMany({
+        where: {
+          OR: [
+            { reciprocalRate: { not: null } },
+            { ieepaBaselineRate: { gt: 0 } },
+          ],
+        },
+        select: {
+          countryCode: true,
+          reciprocalRate: true,
+          ieepaBaselineRate: true,
+          lastVerified: true,
+        },
+        orderBy: { lastVerified: 'desc' },
+      });
+
+      // Build reciprocal rates map from DB
+      for (const profile of profiles) {
+        const rate = profile.reciprocalRate ?? profile.ieepaBaselineRate ?? 10;
+        reciprocalRates[profile.countryCode] = rate;
+      }
+
+      // Add DEFAULT entry
+      reciprocalRates['DEFAULT'] = 10;
+
+      // Get country-specific rate if requested
+      if (country) {
+        countryRate = reciprocalRates[country.toUpperCase()] ?? 10;
+      }
+
+      // Get most recent verification date
+      lastVerified = profiles[0]?.lastVerified
+        ? profiles[0].lastVerified.toISOString().split('T')[0]
+        : null;
+
+    } catch (dbError) {
+      // If DB is unavailable, return empty rates with warning
+      console.error('[API] Failed to read reciprocal rates from DB:', dbError);
+      reciprocalRates = { DEFAULT: 10 };
     }
 
     // Summary statistics
@@ -110,9 +155,10 @@ export async function GET(request: Request) {
       calculation,
       countryRate,
       htsCoverage: HTS_CHAPTER_COVERAGE,
-      reciprocalRates: IEEPA_RECIPROCAL_RATES,
+      reciprocalRates,
       externalResources: EXTERNAL_RESOURCES,
-      lastUpdated: '2026-02-09', // Date of last tariff data verification
+      lastUpdated: lastVerified ?? new Date().toISOString().split('T')[0],
+      dataSource: 'database', // Indicates rates come from DB, not static files
     });
 
   } catch (error) {

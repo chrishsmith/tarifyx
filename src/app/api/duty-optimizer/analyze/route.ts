@@ -31,17 +31,8 @@ export async function POST(request: Request) {
         );
       }
       
-      // TODO: Check user tier - this is a PRO feature
-      // const user = await prisma.user.findUnique({
-      //   where: { id: session.user.id },
-      //   select: { tier: true }
-      // });
-      // if (user?.tier !== 'PRO' && user?.tier !== 'BUSINESS' && user?.tier !== 'ENTERPRISE') {
-      //   return NextResponse.json(
-      //     { success: false, error: 'This feature requires a PRO subscription' },
-      //     { status: 403 }
-      //   );
-      // }
+      // Tier gating intentionally disabled during beta — all users get access.
+      // Will enforce Pro-only access in Phase 4 (Stripe integration).
     }
     
     const body = await request.json();

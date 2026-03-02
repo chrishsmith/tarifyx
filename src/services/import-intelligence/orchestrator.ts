@@ -11,6 +11,7 @@
  */
 
 import { classifyV10, ClassifyV10Input } from '@/services/classification/engine-v10';
+import { getCountryName } from '@/components/shared/constants';
 import { getEffectiveTariff } from '@/services/tariff/registry';
 import { getHTSHierarchy } from '@/services/hts/hierarchy';
 import { getBaseMfnRate, type BaseMfnRateResult } from '@/services/hts/database';
@@ -236,10 +237,15 @@ async function getFallbackLandedCost(
   htsCode: string,
   baseMfnRateOverride?: number
 ): Promise<LandedCost> {
-  // Estimate shipping as 5% of value
-  const shipping = input.value * 0.05;
-  const insurance = input.value * 0.005;
-  const dutiableValue = input.value + shipping + insurance;
+  const shippingIsEstimated = input.shippingCost === undefined || input.shippingCost === null;
+  const insuranceIsEstimated = input.insuranceCost === undefined || input.insuranceCost === null;
+  const isOceanShipment = input.isOceanShipment ?? true;
+
+  const shipping = shippingIsEstimated ? input.value * 0.05 : input.shippingCost!;
+  const insurance = insuranceIsEstimated ? input.value * 0.005 : input.insuranceCost!;
+
+  // US customs uses transaction value (FOB) for duty assessment, not CIF
+  const dutiableValue = input.value;
 
   const baseMfnInfo = await resolveBaseMfnRate(htsCode, baseMfnRateOverride);
   const baseMfnRate = baseMfnInfo.rate ?? 0;
@@ -357,15 +363,21 @@ async function getFallbackLandedCost(
   // Calculate totals
   const totalDuty = layers.reduce((sum, layer) => sum + layer.amount, 0);
   
-  // Calculate fees
-  // MPF: 0.3464% of dutiable value, min $33.58, max $651.50
-  // Updated for FY2026 (effective Oct 1, 2025) per CBP Dec 25-10
+  // MPF: 0.3464% of value, min $33.58, max $651.50 (FY2026 per CBP Dec 25-10)
   const MPF_MIN = 33.58;
   const MPF_MAX = 651.50;
   const mpf = Math.min(Math.max(dutiableValue * 0.003464, MPF_MIN), MPF_MAX);
-  const hmf = dutiableValue * 0.00125;
+  const hmf = isOceanShipment ? dutiableValue * 0.00125 : 0;
   
-  const estimatedAdditional = 450;
+  // Scale additional costs with shipment value (broker + drayage)
+  let estimatedAdditional: number;
+  if (input.value < 2500) estimatedAdditional = 200;
+  else if (input.value <= 100000) estimatedAdditional = 450;
+  else estimatedAdditional = 600;
+
+  const brokerFee = Math.round(estimatedAdditional * 0.39); // ~$175 at $450
+  const drayage = estimatedAdditional - brokerFee;
+
   const total = input.value + shipping + insurance + totalDuty + mpf + hmf + estimatedAdditional;
   
   // Calculate duty as percentage of product cost
@@ -403,6 +415,9 @@ async function getFallbackLandedCost(
     productValue: input.value,
     shipping,
     insurance,
+    shippingIsEstimated,
+    insuranceIsEstimated,
+    isOceanShipment,
     dutiableValue,
     duties: {
       baseMfn: tariffResult.baseMfnRate > 0 ? dutiableValue * (tariffResult.baseMfnRate / 100) : 0,
@@ -424,14 +439,13 @@ async function getFallbackLandedCost(
       total: mpf + hmf,
     },
     estimatedAdditional: {
-      customsBroker: 150,
-      drayage: 300,
-      total: 450,
+      customsBroker: brokerFee,
+      drayage,
+      total: estimatedAdditional,
     },
     total,
     perUnit: total / input.quantity,
     dutyAsPercentOfProduct,
-    // New data quality fields
     dataQuality,
     lastUpdated: tariffResult.lastVerified,
     tariffConfidence,
@@ -2271,29 +2285,3 @@ async function getOptimizationOpportunities(
   };
 }
 
-/**
- * Helper: Get country name from code
- */
-function getCountryName(code: string): string {
-  const names: Record<string, string> = {
-    CN: 'China', VN: 'Vietnam', MX: 'Mexico', IN: 'India', BD: 'Bangladesh',
-    TH: 'Thailand', US: 'United States', TW: 'Taiwan', KR: 'South Korea',
-    JP: 'Japan', DE: 'Germany', IT: 'Italy', FR: 'France', GB: 'United Kingdom',
-    CA: 'Canada', BR: 'Brazil', ID: 'Indonesia', MY: 'Malaysia', PH: 'Philippines',
-    PK: 'Pakistan', TR: 'Turkey', PL: 'Poland', CZ: 'Czech Republic', HU: 'Hungary',
-    RO: 'Romania', ES: 'Spain', PT: 'Portugal', NL: 'Netherlands', BE: 'Belgium',
-    AT: 'Austria', CH: 'Switzerland', SE: 'Sweden', DK: 'Denmark', NO: 'Norway',
-    FI: 'Finland', IE: 'Ireland', SG: 'Singapore', AU: 'Australia', NZ: 'New Zealand',
-    ZA: 'South Africa', EG: 'Egypt', MA: 'Morocco', TN: 'Tunisia', KE: 'Kenya',
-    NG: 'Nigeria', GH: 'Ghana', ET: 'Ethiopia', CO: 'Colombia', CL: 'Chile',
-    PE: 'Peru', AR: 'Argentina', EC: 'Ecuador', DO: 'Dominican Republic',
-    GT: 'Guatemala', HN: 'Honduras', SV: 'El Salvador', CR: 'Costa Rica',
-    PA: 'Panama', JO: 'Jordan', SA: 'Saudi Arabia', AE: 'UAE', IL: 'Israel',
-    QA: 'Qatar', KW: 'Kuwait', BH: 'Bahrain', OM: 'Oman', LK: 'Sri Lanka',
-    MM: 'Myanmar', KH: 'Cambodia', LA: 'Laos', NP: 'Nepal', UA: 'Ukraine',
-    SK: 'Slovakia', BG: 'Bulgaria', HR: 'Croatia', RS: 'Serbia', SI: 'Slovenia',
-    LT: 'Lithuania', LV: 'Latvia', EE: 'Estonia', GR: 'Greece', CY: 'Cyprus',
-    MT: 'Malta', LU: 'Luxembourg', IS: 'Iceland',
-  };
-  return names[code] || code;
-}

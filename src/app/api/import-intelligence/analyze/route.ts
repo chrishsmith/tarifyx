@@ -91,6 +91,9 @@ export async function POST(request: NextRequest) {
         pressurized: body.attributes?.pressurized || false,
         flammable: body.attributes?.flammable || false,
       },
+      shippingCost: body.shippingCost != null ? parseFloat(body.shippingCost) : undefined,
+      insuranceCost: body.insuranceCost != null ? parseFloat(body.insuranceCost) : undefined,
+      isOceanShipment: body.isOceanShipment,
       userId,
     };
     

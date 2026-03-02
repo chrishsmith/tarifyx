@@ -121,8 +121,8 @@ export default function AnalyzePage() {
             description: detail.productDescription || '',
             htsCode: detail.htsCode,
             countryCode: detail.countryOfOrigin || 'CN',
-            value: 10000,
-            quantity: 1000,
+            value: 10000,  // Fallback values for legacy cache entries without stored value/quantity
+            quantity: 1000, // Landed cost section will note these are estimates
             attributes: {
               containsBattery: false,
               containsChemicals: false,

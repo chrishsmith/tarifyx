@@ -8,6 +8,8 @@ import { ConditionalClassificationCard } from './ConditionalClassificationCard';
 import { TariffBreakdown } from './TariffBreakdown';
 import { SourcingPreview } from '@/features/sourcing/components/SourcingPreview';
 import { ClassificationPath } from './ClassificationPath';
+import { getCountryName } from '@/components/shared/constants';
+import { GlossaryTerm } from '@/components/shared/GlossaryTerm';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -163,16 +165,6 @@ const getCountryFlag = (code: string | undefined): string => {
     return flags[code || ''] || '🌍';
 };
 
-// Get country name from country code
-const getCountryName = (code: string | undefined): string => {
-    const names: Record<string, string> = {
-        'CN': 'China', 'MX': 'Mexico', 'CA': 'Canada', 'DE': 'Germany', 'JP': 'Japan',
-        'KR': 'South Korea', 'VN': 'Vietnam', 'IN': 'India', 'TW': 'Taiwan', 'TH': 'Thailand',
-        'GB': 'United Kingdom', 'IT': 'Italy', 'FR': 'France', 'HK': 'Hong Kong', 'BR': 'Brazil',
-        'RU': 'Russia', 'TR': 'Turkey', 'ID': 'Indonesia', 'MY': 'Malaysia', 'PH': 'Philippines',
-    };
-    return names[code || ''] || code || 'Unknown';
-};
 
 interface ClassificationResultDisplayProps {
     result: ClassificationResult;
@@ -338,7 +330,7 @@ export const ClassificationResultDisplay: React.FC<ClassificationResultDisplayPr
                             <span className="text-lg">{getCountryFlag(result.input.countryOfOrigin)}</span>
                             <div>
                                 <Text className="text-xs text-slate-500 block">Origin</Text>
-                                <Text strong className="text-slate-800">{getCountryName(result.input.countryOfOrigin)}</Text>
+                                <Text strong className="text-slate-800">{getCountryName(result.input.countryOfOrigin ?? '')}</Text>
                             </div>
                         </div>
                     )}
@@ -388,7 +380,7 @@ export const ClassificationResultDisplay: React.FC<ClassificationResultDisplayPr
                     <div className="flex-1">
                         <div className="flex items-center gap-2">
                             <Text className="text-slate-500 text-xs font-semibold uppercase tracking-wider">
-                                HTS Classification
+                                <GlossaryTerm term="HTS">HTS</GlossaryTerm> Classification
                             </Text>
                             {selectedConditionalCode && (
                                 <Tag color="green" className="text-xs">✓ Updated</Tag>
@@ -643,7 +635,7 @@ export const ClassificationResultDisplay: React.FC<ClassificationResultDisplayPr
             {result.effectiveTariff ? (
                 <TariffBreakdown
                     effectiveTariff={result.effectiveTariff}
-                    countryName={getCountryName(result.input.countryOfOrigin)}
+                    countryName={getCountryName(result.input.countryOfOrigin ?? '')}
                     countryFlag={getCountryFlag(result.input.countryOfOrigin)}
                 />
             ) : (
@@ -657,7 +649,7 @@ export const ClassificationResultDisplay: React.FC<ClassificationResultDisplayPr
                     </Title>
                     <div className="bg-gradient-to-br from-teal-50 to-teal-100 p-6 rounded-xl border border-teal-200">
                         <div className="flex items-center">
-                            <Text className="text-slate-600 text-sm font-medium">Base Rate (MFN)</Text>
+                            <Text className="text-slate-600 text-sm font-medium">Base Rate (<GlossaryTerm term="MFN">MFN</GlossaryTerm>)</Text>
                             <HelpIcon term="General Rate (MFN)" />
                         </div>
                         <Title level={2} className="m-0 mt-2 text-teal-600">{result.dutyRate.generalRate}</Title>
@@ -679,8 +671,8 @@ export const ClassificationResultDisplay: React.FC<ClassificationResultDisplayPr
                     message={
                         <span className="font-semibold">
                             {result.effectiveTariff.adcvdWarning.isCountryAffected
-                                ? '⚠️ AD/CVD Orders May Apply'
-                                : '📋 AD/CVD Notice'}
+                                ? <><GlossaryTerm term="AD/CVD">AD/CVD</GlossaryTerm> Orders May Apply</>
+                                : <><GlossaryTerm term="AD/CVD">AD/CVD</GlossaryTerm> Notice</>}
                         </span>
                     }
                     description={

@@ -54,6 +54,7 @@ import {
 } from 'recharts';
 import { exportToExcel, ExcelColumn } from '@/services/exportService';
 import { formatHtsCode } from '@/utils/htsFormatting';
+import { COUNTRY_OPTIONS } from '@/components/shared/constants';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -69,25 +70,6 @@ const POPULAR_CHAPTERS = [
     { value: '8708', label: '8708 - Auto Parts' },
     { value: '3926', label: '3926 - Plastics Articles' },
     { value: '8541', label: '8541 - Semiconductors' },
-];
-
-// Country options for filtering
-const COUNTRY_OPTIONS = [
-    { value: 'CN', label: 'China' },
-    { value: 'VN', label: 'Vietnam' },
-    { value: 'IN', label: 'India' },
-    { value: 'MX', label: 'Mexico' },
-    { value: 'TH', label: 'Thailand' },
-    { value: 'BD', label: 'Bangladesh' },
-    { value: 'ID', label: 'Indonesia' },
-    { value: 'TW', label: 'Taiwan' },
-    { value: 'KR', label: 'South Korea' },
-    { value: 'JP', label: 'Japan' },
-    { value: 'DE', label: 'Germany' },
-    { value: 'IT', label: 'Italy' },
-    { value: 'CA', label: 'Canada' },
-    { value: 'MY', label: 'Malaysia' },
-    { value: 'PH', label: 'Philippines' },
 ];
 
 // Chart colors

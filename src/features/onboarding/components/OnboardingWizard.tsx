@@ -5,6 +5,7 @@ import { Steps, Card, Button, Input, Typography, Result, message, Tag, Select, P
 import { LoadingState } from '@/components/shared/LoadingState';
 import { Sparkles, Search, CheckCircle, ArrowRight, AlertTriangle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { formatHtsCode } from '@/utils/htsFormatting';
 
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
@@ -90,16 +91,6 @@ export const OnboardingWizard: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    };
-
-    /** Format HTS code with dots for display (e.g. 6109100012 → 6109.10.00.12) */
-    const formatHtsCode = (code: string): string => {
-        const c = code.replace(/\./g, '');
-        if (c.length <= 4) return c;
-        let formatted = c.slice(0, 4) + '.' + c.slice(4, 6);
-        if (c.length > 6) formatted += '.' + c.slice(6, 8);
-        if (c.length > 8) formatted += '.' + c.slice(8);
-        return formatted;
     };
 
     const confidenceColor = (pct: number) => {

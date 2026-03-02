@@ -100,7 +100,7 @@ export default function Home() {
             </div>
             <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-8 text-left group">
               <div className="flex flex-col gap-4">
-                <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform text-indigo-600">
+                <div className="w-12 h-12 bg-teal-50 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform text-teal-600">
                   <Globe size={24} />
                 </div>
                 <div>

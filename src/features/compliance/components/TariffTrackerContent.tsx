@@ -37,15 +37,13 @@ import {
   Building,
   BookOpen,
   TrendingUp,
-  Download,
   ArrowRight,
   Calculator,
   Package,
 } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LoadingState, ErrorState } from '@/components/shared';
-import { exportToExcel, type ExcelColumn } from '@/services/exportService';
+import { COUNTRY_OPTIONS, getCountryName, LoadingState, ErrorState } from '@/components/shared';
 import { formatHtsCode } from '@/utils/htsFormatting';
 
 const { Title, Text, Paragraph } = Typography;
@@ -136,46 +134,6 @@ const STATUS_ICONS: Record<string, React.ReactNode> = {
   expired: <XCircle size={14} className="text-gray-400" />,
 };
 
-/** Map ISO codes to country names for display */
-const COUNTRY_NAMES: Record<string, string> = {
-  CN: 'China', HK: 'Hong Kong', VN: 'Vietnam', MX: 'Mexico', CA: 'Canada',
-  IN: 'India', TH: 'Thailand', ID: 'Indonesia', BD: 'Bangladesh', KH: 'Cambodia',
-  TW: 'Taiwan', KR: 'South Korea', JP: 'Japan', MY: 'Malaysia', PH: 'Philippines',
-  PK: 'Pakistan', LK: 'Sri Lanka', GB: 'United Kingdom', DE: 'Germany', IT: 'Italy',
-  FR: 'France', ES: 'Spain', NL: 'Netherlands', BE: 'Belgium', PL: 'Poland',
-  SG: 'Singapore', AU: 'Australia', IL: 'Israel', CL: 'Chile', CO: 'Colombia',
-  PE: 'Peru', BR: 'Brazil', TR: 'Turkey', EU: 'European Union',
-};
-
-function getCountryName(code: string): string {
-  return COUNTRY_NAMES[code?.toUpperCase()] || code;
-}
-
-const COUNTRY_OPTIONS = [
-  { value: 'CN', label: 'China' },
-  { value: 'HK', label: 'Hong Kong' },
-  { value: 'VN', label: 'Vietnam' },
-  { value: 'MX', label: 'Mexico' },
-  { value: 'CA', label: 'Canada' },
-  { value: 'IN', label: 'India' },
-  { value: 'TH', label: 'Thailand' },
-  { value: 'ID', label: 'Indonesia' },
-  { value: 'BD', label: 'Bangladesh' },
-  { value: 'KH', label: 'Cambodia' },
-  { value: 'TW', label: 'Taiwan' },
-  { value: 'KR', label: 'South Korea' },
-  { value: 'JP', label: 'Japan' },
-  { value: 'MY', label: 'Malaysia' },
-  { value: 'PH', label: 'Philippines' },
-  { value: 'PK', label: 'Pakistan' },
-  { value: 'LK', label: 'Sri Lanka' },
-  { value: 'GB', label: 'United Kingdom' },
-  { value: 'DE', label: 'Germany' },
-  { value: 'SG', label: 'Singapore' },
-  { value: 'AU', label: 'Australia' },
-  { value: 'BR', label: 'Brazil' },
-  { value: 'TR', label: 'Turkey' },
-];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -271,16 +229,17 @@ export const TariffTrackerContent: React.FC = () => {
     breakdown.push({ program: 'IEEPA Reciprocal/Baseline', rate: ieepaRate });
     total += ieepaRate;
     
-    // Fentanyl
-    if (selectedCountry === 'CN' || selectedCountry === 'HK') {
-      breakdown.push({ program: 'IEEPA Fentanyl', rate: 10 });
-      total += 10;
-    } else if (selectedCountry === 'MX') {
-      breakdown.push({ program: 'IEEPA Fentanyl (Mexico)', rate: 25 });
-      total += 25;
-    } else if (selectedCountry === 'CA') {
-      breakdown.push({ program: 'IEEPA Fentanyl (Canada)', rate: 25 });
-      total += 25;
+    // Fentanyl — pull rates from fetched program data
+    const fentanylPrograms = filteredPrograms.filter(p => p.type === 'ieepa_fentanyl' && p.status === 'active');
+    for (const fp of fentanylPrograms) {
+      const appliesToCountry = 
+        (fp.id.includes('china') && (selectedCountry === 'CN' || selectedCountry === 'HK')) ||
+        (fp.id.includes('mexico') && selectedCountry === 'MX') ||
+        (fp.id.includes('canada') && selectedCountry === 'CA');
+      if (appliesToCountry) {
+        breakdown.push({ program: fp.name, rate: fp.rate });
+        total += fp.rate;
+      }
     }
     
     // Section 301 (CN only)
@@ -313,26 +272,6 @@ export const TariffTrackerContent: React.FC = () => {
   }, [htsSearch, selectedCountry, data, filteredPrograms]);
 
   // Export data
-  const handleExport = () => {
-    if (!filteredPrograms.length) return;
-    
-    const exportColumns: ExcelColumn[] = [
-      { header: 'Program Name', key: 'name' },
-      { header: 'Category', key: 'category', transform: (v: unknown) => CATEGORY_LABELS[v as keyof typeof CATEGORY_LABELS] || String(v) },
-      { header: 'Rate', key: 'rateDisplay' },
-      { header: 'Status', key: 'status' },
-      { header: 'Effective Date', key: 'effectiveDate' },
-      { header: 'Chapter 99 Code', key: 'chapter99Code' },
-      { header: 'Legal Authority', key: 'legalAuthority' },
-      { header: 'Executive Order', key: 'executiveOrder' },
-      { header: 'Federal Register', key: 'federalRegisterCitation' },
-      { header: 'Description', key: 'description' },
-      { header: 'HTS Chapters', key: 'htsChapters', transform: (v: unknown) => Array.isArray(v) ? v.join(', ') : 'All' },
-    ];
-    
-    exportToExcel(filteredPrograms as unknown as Record<string, unknown>[], exportColumns, { filename: `tariff-programs-${Date.now()}` });
-  };
-
   // Navigate to landed cost calculator with context
   const handleCalculateLandedCost = () => {
     const params = new URLSearchParams();
@@ -719,6 +658,7 @@ export const TariffTrackerContent: React.FC = () => {
             size="small"
             scroll={{ x: 800 }}
           />
+
         </Panel>
 
         {/* Section 232 */}
@@ -744,77 +684,6 @@ export const TariffTrackerContent: React.FC = () => {
       </Collapse>
       </div>
 
-      {/* IEEPA Reciprocal Rates by Country */}
-      <div className="mb-6">
-      <Card
-        className="border border-slate-200 shadow-sm"
-        title={
-          <Space>
-            <TrendingUp size={18} className="text-orange-500" />
-            <span>IEEPA Reciprocal Rates by Country</span>
-          </Space>
-        }
-        extra={
-          <Button 
-            type="default" 
-            icon={<Download size={14} />} 
-            onClick={handleExport}
-            size="small"
-          >
-            Export All
-          </Button>
-        }
-      >
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          {Object.entries(data.reciprocalRates)
-            .filter(([code]) => code !== 'DEFAULT' && code !== 'EU')
-            .sort((a, b) => b[1] - a[1])
-            .map(([code, rate]) => (
-              <div 
-                key={code}
-                className={`p-3 rounded-lg border cursor-pointer transition-colors hover:ring-2 hover:ring-teal-300 ${
-                  rate >= 40 ? 'bg-red-50 border-red-200' :
-                  rate >= 25 ? 'bg-orange-50 border-orange-200' :
-                  rate >= 15 ? 'bg-yellow-50 border-yellow-200' :
-                  'bg-slate-50 border-slate-200'
-                } ${selectedCountry === code ? 'ring-2 ring-teal-500' : ''}`}
-                onClick={() => setSelectedCountry(code)}
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Text className="text-xs text-slate-500 block">{code}</Text>
-                    <Text strong className="text-sm block truncate" title={getCountryName(code)}>
-                      {getCountryName(code)}
-                    </Text>
-                  </div>
-                  <Text 
-                    className={`text-lg font-bold ${
-                      rate >= 40 ? 'text-red-600' :
-                      rate >= 25 ? 'text-orange-600' :
-                      rate >= 15 ? 'text-yellow-600' :
-                      'text-slate-600'
-                    }`}
-                  >
-                    {rate}%
-                  </Text>
-                </div>
-              </div>
-            ))}
-        </div>
-        <Alert
-          type="info"
-          message="These are IEEPA reciprocal rates only. China also has 10% fentanyl + Section 301 (7.5-100%). Mexico/Canada have 25% fentanyl tariff (USMCA-compliant goods exempt). Click a country to filter programs above."
-          className="mt-4"
-          showIcon
-        />
-        <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
-          <Calendar size={12} />
-          <span>Data last verified: {data.lastUpdated}</span>
-          <span className="text-slate-300">|</span>
-          <span>China rates per Nov 2025 trade deal (valid until Nov 10, 2026)</span>
-        </div>
-      </Card>
-      </div>
 
       {/* External Resources */}
       <Card

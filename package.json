@@ -1,5 +1,5 @@
 {
-  "name": "sourcify",
+  "name": "tarifyx",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -17,6 +17,7 @@
     "@prisma/adapter-neon": "^7.2.0",
     "@prisma/client": "^5.22.0",
     "@react-pdf/renderer": "^4.3.2",
+    "@sentry/nextjs": "^10.41.0",
     "@uploadthing/react": "^7.3.3",
     "antd": "^6.1.1",
     "better-auth": "^1.4.7",

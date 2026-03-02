@@ -10,6 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { runHtsImportFromDefault, getHtsImportHistory } from '@/services/hts/import';
 import { getHtsDatabaseStats } from '@/services/hts/database';
 import { checkForHtsUpdates, markRevisionAsCurrent } from '@/services/hts/revision-checker';
@@ -46,6 +47,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const authResult = await requireAdmin();
+  if (isAuthError(authResult)) return authResult;
+
   try {
     const { searchParams } = new URL(request.url);
     const specificFile = searchParams.get('file');

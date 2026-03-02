@@ -12,6 +12,10 @@ import { headers } from 'next/headers';
 import { classifyV10, generateJustification, ClassifyV10Input } from '@/services/classification/engine-v10';
 import { prisma } from '@/lib/db';
 import { auth } from '@/lib/auth';
+import { checkRateLimit } from '@/lib/rate-limit';
+
+const ANON_RATE_LIMIT = 30;  // per hour
+const AUTH_RATE_LIMIT = 60;   // per hour
 
 export const maxDuration = 30; // seconds
 export const dynamic = 'force-dynamic';
@@ -64,6 +68,25 @@ export async function POST(request: NextRequest) {
       }
     } catch {
       // Session not available - that's okay
+    }
+    
+    // Rate limiting — keyed by userId or IP
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+    const rateLimitKey = userId ? `user:${userId}` : `ip:${ip}`;
+    const maxReqs = userId ? AUTH_RATE_LIMIT : ANON_RATE_LIMIT;
+    const { allowed, remaining, resetMs } = checkRateLimit(rateLimitKey, maxReqs);
+    
+    if (!allowed) {
+      return NextResponse.json(
+        { success: false, error: 'Rate limit exceeded. Try again later.' },
+        { 
+          status: 429,
+          headers: {
+            'Retry-After': String(Math.ceil(resetMs / 1000)),
+            'X-RateLimit-Remaining': '0',
+          },
+        }
+      );
     }
     
     // Run classification
@@ -208,12 +231,14 @@ export async function GET(request: NextRequest) {
     );
   }
   
-  // Forward to POST handler
+  // Forward to POST handler, preserving original cookies for auth
   const body = { description, origin, destination, material, saveToHistory: false };
+  const incomingHeaders = new Headers(request.headers);
+  incomingHeaders.set('Content-Type', 'application/json');
   const mockRequest = new NextRequest(request.url, {
     method: 'POST',
     body: JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json' },
+    headers: incomingHeaders,
   });
   
   return POST(mockRequest);

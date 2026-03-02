@@ -73,18 +73,10 @@ export function normalizeHtsCode(code: string): string {
 /**
  * Format HTS code with dots for display
  * "6109100012" → "6109.10.00.12"
+ * 
+ * Re-exported from canonical source for backwards compatibility.
  */
-export function formatHtsCode(code: string): string {
-  const clean = normalizeHtsCode(code);
-  
-  if (clean.length <= 2) return clean;                                    // Chapter: "61"
-  if (clean.length <= 4) return clean;                                    // Heading: "6109"
-  if (clean.length <= 6) return `${clean.slice(0, 4)}.${clean.slice(4)}`; // Subheading: "6109.10"
-  if (clean.length <= 8) return `${clean.slice(0, 4)}.${clean.slice(4, 6)}.${clean.slice(6)}`; // Tariff line: "6109.10.00"
-  
-  // Statistical suffix: "6109.10.00.12"
-  return `${clean.slice(0, 4)}.${clean.slice(4, 6)}.${clean.slice(6, 8)}.${clean.slice(8)}`;
-}
+export { formatHtsCode } from '@/utils/htsFormatting';
 
 /**
  * Determine HTS level from code length

@@ -14,23 +14,9 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { formatHtsCode } from '@/utils/htsFormatting';
+import { getCountryName } from '@/components/shared/constants';
 
 const { Text, Title } = Typography;
-
-/** Map ISO 3166-1 alpha-2 codes to country names */
-const COUNTRY_NAMES: Record<string, string> = {
-    CN: 'China', VN: 'Vietnam', IN: 'India', BD: 'Bangladesh', TH: 'Thailand',
-    ID: 'Indonesia', MY: 'Malaysia', PH: 'Philippines', KR: 'South Korea', JP: 'Japan',
-    TW: 'Taiwan', MX: 'Mexico', CA: 'Canada', BR: 'Brazil', DE: 'Germany',
-    IT: 'Italy', FR: 'France', GB: 'United Kingdom', ES: 'Spain', TR: 'Turkey',
-    US: 'United States', AU: 'Australia', SG: 'Singapore', HK: 'Hong Kong',
-    CO: 'Colombia', CL: 'Chile', PE: 'Peru', AR: 'Argentina', PK: 'Pakistan',
-    KH: 'Cambodia', MM: 'Myanmar', LK: 'Sri Lanka', NP: 'Nepal',
-};
-
-function getCountryName(code: string): string {
-    return COUNTRY_NAMES[code?.toUpperCase()] || code;
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES

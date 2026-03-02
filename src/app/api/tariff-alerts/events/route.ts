@@ -1,27 +1,31 @@
 /**
  * Tariff Alert Events API
  * 
- * GET /api/tariff-alerts/events - List alert events (notifications/history)
+ * GET /api/tariff-alerts/events - List alert events for the authenticated user
  */
 
 import { NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 import { prisma } from '@/lib/db';
+import { auth } from '@/lib/auth';
 
 export async function GET(request: Request) {
   try {
+    const session = await auth.api.getSession({ headers: await headers() });
+    if (!session?.user?.id) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
     const alertId = searchParams.get('alertId');
     const limit = parseInt(searchParams.get('limit') || '50');
 
-    const whereClause: { alertId?: string; alert?: { userId: string } } = {};
+    const whereClause: { alertId?: string; alert: { userId: string } } = {
+      alert: { userId: session.user.id },
+    };
 
     if (alertId) {
       whereClause.alertId = alertId;
-    }
-
-    if (userId) {
-      whereClause.alert = { userId };
     }
 
     const events = await prisma.tariffAlertEvent.findMany({
@@ -33,10 +37,7 @@ export async function GET(request: Request) {
             htsCode: true,
             countryOfOrigin: true,
             savedProduct: {
-              select: {
-                id: true,
-                name: true,
-              },
+              select: { id: true, name: true },
             },
           },
         },
@@ -51,7 +52,7 @@ export async function GET(request: Request) {
       count: events.length,
     });
   } catch (error) {
-    console.error('Tariff alert events GET error:', error);
+    console.error('[tariff-alerts/events] GET error:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to fetch alert events' },
       { status: 500 }

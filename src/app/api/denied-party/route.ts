@@ -10,6 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { rateLimitByIP } from '@/lib/rate-limit';
 import { prisma } from '@/lib/db';
 import { DeniedPartyList, DeniedPartyType } from '@prisma/client';
 
@@ -26,6 +27,9 @@ import { DeniedPartyList, DeniedPartyType } from '@prisma/client';
  * - pageSize: Items per page (default 50, max 100)
  */
 export async function GET(request: NextRequest) {
+  const limited = rateLimitByIP(request);
+  if (limited) return limited;
+
   try {
     const searchParams = request.nextUrl.searchParams;
     

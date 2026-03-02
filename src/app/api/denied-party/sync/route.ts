@@ -11,6 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin, isAuthError } from '@/lib/api-auth';
 import { 
   syncOFACSDNList, 
   getLastSyncInfo as getOFACLastSyncInfo, 
@@ -161,6 +162,9 @@ export async function GET(request: NextRequest) {
  * In production, this would ideally be run as a background job.
  */
 export async function POST(request: NextRequest) {
+  const authResult = await requireAdmin();
+  if (isAuthError(authResult)) return authResult;
+
   try {
     const searchParams = request.nextUrl.searchParams;
     let listType: SupportedList = 'ofac_sdn'; // Default for backward compatibility
