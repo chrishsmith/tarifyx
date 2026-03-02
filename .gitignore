@@ -43,3 +43,21 @@ data/
 
 # Ralph config (may contain API key)
 .cursor/ralph-config.json
+
+# Python / ML
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+
+# ML models and caches
+models/
+setfit-hts-heading/
+.cache/
+*.safetensors
+*.pkl
+*.pt
+*.pth
+*.bin
+*.onnx
