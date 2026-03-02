@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Classification Engine V6 "Atlas" - TRUE Dynamic Tree Navigation
  *

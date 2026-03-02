@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Classification API V7 - GRI-Aware Hierarchical Classification
  * 

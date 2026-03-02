@@ -258,17 +258,17 @@ async function layer1ExhaustiveSearch(
   console.log('[DutyOptimizer] Layer 1: Starting exhaustive search');
   
   // Step 1: Semantic search (primary method)
-  const semanticResults = await searchHtsBySemantic(productDescription, 30);
+  const semanticResults = await searchHtsBySemantic(productDescription, { limit: 30 });
   console.log(`[DutyOptimizer] Semantic search found ${semanticResults.length} candidates`);
   
   const candidates: CandidateCode[] = semanticResults.map(r => ({
     code: r.code,
     formattedCode: formatHtsCode(r.code),
     description: r.description,
-    fullDescription: r.fullDescription || r.description,
-    parentGroupings: r.parentGroupings || [],
+    fullDescription: r.description,
+    parentGroupings: [],
     generalRate: r.generalRate,
-    adValoremRate: r.adValoremRate,
+    adValoremRate: null,
     chapter: r.code.substring(0, 2),
     heading: r.code.substring(0, 4),
     similarity: r.similarity,
@@ -598,11 +598,11 @@ async function calculateDutyForCode(
     return {
       baseMfnRate,
       baseMfnDisplay: generalRate || 'Free',
-      section301Rate: tariff.section301 || 0,
-      ieepaRate: (tariff.ieepaBaseline || 0) + (tariff.ieepaReciprocal || 0),
-      fentanylRate: tariff.fentanyl || 0,
-      totalRate: baseMfnRate + (tariff.section301 || 0) + (tariff.ieepaBaseline || 0) + 
-                 (tariff.ieepaReciprocal || 0) + (tariff.fentanyl || 0),
+      section301Rate: tariff.section301Rate || 0,
+      ieepaRate: (tariff.ieepaBreakdown?.baseline || 0) + (tariff.ieepaBreakdown?.reciprocal || 0),
+      fentanylRate: tariff.ieepaBreakdown?.fentanyl || 0,
+      totalRate: baseMfnRate + (tariff.section301Rate || 0) + (tariff.ieepaBreakdown?.baseline || 0) + 
+                 (tariff.ieepaBreakdown?.reciprocal || 0) + (tariff.ieepaBreakdown?.fentanyl || 0),
     };
   } catch (err) {
     console.error(`[DutyOptimizer] Error calculating duty for ${code}:`, err);

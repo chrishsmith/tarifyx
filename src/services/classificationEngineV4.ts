@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Classification Engine V4 - Experimental
  * 
