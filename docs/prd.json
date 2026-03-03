@@ -1,0 +1,250 @@
+{
+  "name": "Sourcify Trade Intelligence Platform",
+  "description": "Comprehensive trade intelligence platform competing with Datamyne + CustomsInfo. AI-powered classification, modern UX, SMB pricing.",
+  "sourceOfTruth": "prd-trade-intelligence.md",
+  "version": "2.0.0",
+  "lastUpdated": "2026-01-22",
+  "phases": [
+    {
+      "id": "phase-1",
+      "name": "Enhance Core (Public Data)",
+      "description": "Build features using free/public data sources",
+      "status": "complete"
+    },
+    {
+      "id": "phase-2",
+      "name": "Compliance Tools (Public Data)",
+      "description": "Add compliance features from public government data",
+      "status": "complete"
+    },
+    {
+      "id": "phase-monetization",
+      "name": "Monetization",
+      "description": "Enable revenue collection - Stripe, usage limits, feature gating",
+      "status": "in_progress"
+    },
+    {
+      "id": "phase-3",
+      "name": "Trade Intelligence (Licensed Data)",
+      "description": "BOL shipment data, supplier discovery - requires $10K-50K/yr license",
+      "status": "future"
+    },
+    {
+      "id": "phase-4",
+      "name": "Company Intelligence (Licensed Data)",
+      "description": "Company profiles, contacts, hierarchy - requires $20K-80K/yr license",
+      "status": "future"
+    }
+  ],
+  "completedFeatures": [
+    {
+      "id": "core-classification",
+      "name": "AI Classification Engine (V10)",
+      "description": "Semantic search over 27,061 HTS codes with embeddings, ~4s response time",
+      "phase": "phase-1"
+    },
+    {
+      "id": "core-tariff-registry",
+      "name": "Country Tariff Registry",
+      "description": "199 countries, 7 data sources (USITC, Federal Register, OFAC, FTA list, AD/CVD)",
+      "phase": "phase-1"
+    },
+    {
+      "id": "core-landed-cost",
+      "name": "Landed Cost Calculator",
+      "description": "Full breakdown with MPF, HMF, customs fees. Save/compare scenarios.",
+      "phase": "phase-1"
+    },
+    {
+      "id": "p1-trade-stats",
+      "name": "Trade Statistics Dashboard",
+      "description": "USITC DataWeb visualization - top sources, trends, country breakdown",
+      "phase": "phase-1"
+    },
+    {
+      "id": "p1-fta-rules",
+      "name": "FTA Rules Engine",
+      "description": "14 FTA agreements, 30+ rules indexed by HTS code",
+      "phase": "phase-1"
+    },
+    {
+      "id": "p1-fta-calc",
+      "name": "FTA Qualification Calculator",
+      "description": "BOM input, RVC calculation (4 methods), tariff shift analysis",
+      "phase": "phase-1"
+    },
+    {
+      "id": "p1-hts-history",
+      "name": "Historical HTS Archives",
+      "description": "Code changes 2020-2025, forward/backward mapping, Federal Register links",
+      "phase": "phase-1"
+    },
+    {
+      "id": "p1-pga",
+      "name": "PGA Requirements Lookup",
+      "description": "13 agencies, 30+ flags, chapter-level requirements",
+      "phase": "phase-1"
+    },
+    {
+      "id": "p1-tariff-tracker",
+      "name": "Section 301/IEEPA Tracker",
+      "description": "Special tariffs by category, country, HTS. Federal Register links.",
+      "phase": "phase-1"
+    },
+    {
+      "id": "p2-denied-party",
+      "name": "Denied Party Screening",
+      "description": "OFAC SDN, BIS Entity List, BIS Denied Persons. Single and batch screening.",
+      "phase": "phase-2"
+    },
+    {
+      "id": "p2-addcvd",
+      "name": "ADD/CVD Lookup",
+      "description": "20+ product categories, risk levels, case numbers, external links",
+      "phase": "phase-2"
+    },
+    {
+      "id": "p2-alerts",
+      "name": "Compliance Alerts System",
+      "description": "Tariff alerts by HTS/country, alert history, notification preferences",
+      "phase": "phase-2"
+    },
+    {
+      "id": "additional-bulk",
+      "name": "Bulk Classification",
+      "description": "CSV upload, progress tracking, Excel export of results",
+      "phase": "phase-1"
+    },
+    {
+      "id": "additional-export",
+      "name": "PDF/Excel/CSV Export",
+      "description": "Classification reports, product lists, search history export",
+      "phase": "phase-1"
+    },
+    {
+      "id": "additional-country-compare",
+      "name": "Country Comparison",
+      "description": "What-if different country analysis, duty savings calculation",
+      "phase": "phase-1"
+    }
+  ],
+  "currentWork": [
+    {
+      "id": "monetization-stripe",
+      "name": "Stripe Integration",
+      "description": "Checkout, subscription webhooks, billing portal",
+      "phase": "phase-monetization",
+      "priority": 1,
+      "status": "not_started"
+    },
+    {
+      "id": "monetization-limits",
+      "name": "Usage Limits",
+      "description": "5 classifications/day for free tier, enforcement",
+      "phase": "phase-monetization",
+      "priority": 2,
+      "status": "not_started"
+    },
+    {
+      "id": "monetization-gating",
+      "name": "Feature Gating",
+      "description": "Lock Pro features (sourcing, FTA calc, exports) behind paywall",
+      "phase": "phase-monetization",
+      "priority": 3,
+      "status": "not_started"
+    },
+    {
+      "id": "monetization-upsell",
+      "name": "Upsell Teasers",
+      "description": "Show upgrade prompts when free users hit limits or try Pro features",
+      "phase": "phase-monetization",
+      "priority": 4,
+      "status": "not_started"
+    }
+  ],
+  "deferred": [
+    {
+      "id": "p2-cbp-rulings",
+      "name": "CBP Rulings Search",
+      "description": "Index rulings.cbp.gov database",
+      "phase": "phase-2",
+      "reason": "Complex web scraping required - deferred until manual implementation"
+    }
+  ],
+  "future": [
+    {
+      "id": "p3-bol-data",
+      "name": "BOL Shipment Data",
+      "description": "US import/export shipment records",
+      "phase": "phase-3",
+      "cost": "$10K-50K/yr",
+      "providers": ["ImportGenius", "ImportKey", "Panjiva"]
+    },
+    {
+      "id": "p3-supplier-discovery",
+      "name": "Supplier Discovery",
+      "description": "Find suppliers by product/HTS from BOL data",
+      "phase": "phase-3",
+      "requires": "p3-bol-data"
+    },
+    {
+      "id": "p3-competitor-analysis",
+      "name": "Competitor Analysis",
+      "description": "Who imports what from whom",
+      "phase": "phase-3",
+      "requires": "p3-bol-data"
+    },
+    {
+      "id": "p4-company-profiles",
+      "name": "Company Profiles",
+      "description": "Revenue, employees, corporate hierarchy",
+      "phase": "phase-4",
+      "cost": "$20K-80K/yr",
+      "providers": ["D&B", "ZoomInfo"]
+    },
+    {
+      "id": "p4-contacts",
+      "name": "Contact Database",
+      "description": "Decision-maker emails and phones",
+      "phase": "phase-4",
+      "cost": "$10K-30K/yr",
+      "providers": ["ZoomInfo", "Apollo", "Lusha"]
+    }
+  ],
+  "pricingTiers": {
+    "free": {
+      "price": 0,
+      "limits": {
+        "classificationsPerDay": 5,
+        "savedProducts": 10,
+        "alerts": 1
+      },
+      "features": ["Basic classification", "Trade stats (limited)", "ADD/CVD lookup"]
+    },
+    "pro": {
+      "price": 99,
+      "limits": {
+        "classificationsPerDay": "unlimited",
+        "savedProducts": 100,
+        "alerts": 25
+      },
+      "features": ["Everything in Free", "Sourcing intelligence", "FTA qualification", "Denied party screening", "Compliance alerts", "Export (PDF/Excel)"]
+    },
+    "business": {
+      "price": 299,
+      "limits": {
+        "classificationsPerDay": "unlimited",
+        "savedProducts": "unlimited",
+        "alerts": "unlimited",
+        "bulkUpload": 500,
+        "apiCalls": 1000,
+        "teamMembers": 5
+      },
+      "features": ["Everything in Pro", "Bulk classification", "API access", "Team collaboration", "Priority support"]
+    },
+    "enterprise": {
+      "price": "custom",
+      "features": ["Everything in Business", "BOL data (Phase 3)", "Company intelligence (Phase 4)", "White-label", "Dedicated support", "Custom integrations"]
+    }
+  }
+}

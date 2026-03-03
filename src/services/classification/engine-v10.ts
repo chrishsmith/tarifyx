@@ -1,0 +1,2878 @@
+/**
+ * HTS Classification Engine V10 "Velocity"
+ * 
+ * Sub-2-second classification through:
+ * 1. SEMANTIC SEARCH via pgvector embeddings (primary method)
+ * 2. Keyword fallback (when embeddings not available)
+ * 3. Deterministic scoring (no AI in critical path)
+ * 4. "Other" validation via negative matching
+ * 5. Full description building from parentGroupings
+ * 
+ * @module classificationEngineV10
+ * @created December 30, 2025
+ * @see docs/ARCHITECTURE_HTS_CLASSIFICATION_V10.md
+ */
+
+import { prisma } from '@/lib/db';
+import { HtsLevel, Prisma } from '@prisma/client';
+import { 
+  formatHtsCode, 
+  normalizeHtsCode, 
+  getParentCode,
+  getHtsHierarchy,
+  getHtsSiblings,
+  parseHtsCode,
+} from '@/services/hts/database';
+import { getEffectiveTariff, convertToLegacyFormat } from '@/services/tariff/registry';
+import { 
+  searchHtsBySemantic, 
+  dualPathSearch, 
+  getEmbeddingStats,
+  hybridSearch,
+  searchHtsByLexical,
+} from '@/services/hts/embeddings';
+import { 
+  detectConditionalSiblings,
+  ConditionalClassificationResult,
+} from '@/services/conditionalClassification';
+import { 
+  conditionalRerank, 
+  RerankerCandidate,
+  RerankerResult,
+  llmGuidedClassification,
+} from '@/services/classification/llmReranker';
+import { classifyWithSetFit } from '@/services/setfitClassifier';
+import { predictHeadings, HeadingClassifierResult, HeadingPrediction } from '@/services/classification/headingClassifier';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HTS CHAPTER DESCRIPTIONS (Not in database, stored here for reference)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const CHAPTER_DESCRIPTIONS: Record<string, string> = {
+  '01': 'Live animals',
+  '02': 'Meat and edible meat offal',
+  '03': 'Fish and crustaceans, molluscs and other aquatic invertebrates',
+  '04': 'Dairy produce; birds\' eggs; natural honey; edible products of animal origin',
+  '05': 'Products of animal origin, not elsewhere specified or included',
+  '06': 'Live trees and other plants; bulbs, roots and the like; cut flowers and ornamental foliage',
+  '07': 'Edible vegetables and certain roots and tubers',
+  '08': 'Edible fruit and nuts; peel of citrus fruit or melons',
+  '09': 'Coffee, tea, maté and spices',
+  '10': 'Cereals',
+  '11': 'Products of the milling industry; malt; starches; inulin; wheat gluten',
+  '12': 'Oil seeds and oleaginous fruits; miscellaneous grains, seeds and fruit',
+  '13': 'Lac; gums, resins and other vegetable saps and extracts',
+  '14': 'Vegetable plaiting materials; vegetable products not elsewhere specified',
+  '15': 'Animal or vegetable fats and oils and their cleavage products',
+  '16': 'Preparations of meat, of fish or of crustaceans, molluscs or other aquatic invertebrates',
+  '17': 'Sugars and sugar confectionery',
+  '18': 'Cocoa and cocoa preparations',
+  '19': 'Preparations of cereals, flour, starch or milk; pastrycooks\' products',
+  '20': 'Preparations of vegetables, fruit, nuts or other parts of plants',
+  '21': 'Miscellaneous edible preparations',
+  '22': 'Beverages, spirits and vinegar',
+  '23': 'Residues and waste from the food industries; prepared animal fodder',
+  '24': 'Tobacco and manufactured tobacco substitutes',
+  '25': 'Salt; sulfur; earths and stone; plastering materials, lime and cement',
+  '26': 'Ores, slag and ash',
+  '27': 'Mineral fuels, mineral oils and products of their distillation',
+  '28': 'Inorganic chemicals; organic or inorganic compounds of precious metals',
+  '29': 'Organic chemicals',
+  '30': 'Pharmaceutical products',
+  '31': 'Fertilizers',
+  '32': 'Tanning or dyeing extracts; tannins and their derivatives; dyes, pigments',
+  '33': 'Essential oils and resinoids; perfumery, cosmetic or toilet preparations',
+  '34': 'Soap, organic surface-active agents, washing preparations, lubricating preparations',
+  '35': 'Albuminoidal substances; modified starches; glues; enzymes',
+  '36': 'Explosives; pyrotechnic products; matches; pyrophoric alloys',
+  '37': 'Photographic or cinematographic goods',
+  '38': 'Miscellaneous chemical products',
+  '39': 'Plastics and articles thereof',
+  '40': 'Rubber and articles thereof',
+  '41': 'Raw hides and skins (other than furskins) and leather',
+  '42': 'Articles of leather; saddlery and harness; travel goods, handbags',
+  '43': 'Furskins and artificial fur; manufactures thereof',
+  '44': 'Wood and articles of wood; wood charcoal',
+  '45': 'Cork and articles of cork',
+  '46': 'Manufactures of straw, of esparto or of other plaiting materials',
+  '47': 'Pulp of wood or of other fibrous cellulosic material',
+  '48': 'Paper and paperboard; articles of paper pulp, of paper or of paperboard',
+  '49': 'Printed books, newspapers, pictures and other products of the printing industry',
+  '50': 'Silk',
+  '51': 'Wool, fine or coarse animal hair; horsehair yarn and woven fabric',
+  '52': 'Cotton',
+  '53': 'Other vegetable textile fibers; paper yarn and woven fabrics of paper yarn',
+  '54': 'Man-made filaments; strip and the like of man-made textile materials',
+  '55': 'Man-made staple fibers',
+  '56': 'Wadding, felt and nonwovens; special yarns; twine, cordage, ropes and cables',
+  '57': 'Carpets and other textile floor coverings',
+  '58': 'Special woven fabrics; tufted textile fabrics; lace; tapestries; trimmings',
+  '59': 'Impregnated, coated, covered or laminated textile fabrics',
+  '60': 'Knitted or crocheted fabrics',
+  '61': 'Articles of apparel and clothing accessories, knitted or crocheted',
+  '62': 'Articles of apparel and clothing accessories, not knitted or crocheted',
+  '63': 'Other made up textile articles; sets; worn clothing and worn textile articles',
+  '64': 'Footwear, gaiters and the like; parts of such articles',
+  '65': 'Headgear and parts thereof',
+  '66': 'Umbrellas, sun umbrellas, walking sticks, seat-sticks, whips, riding-crops',
+  '67': 'Prepared feathers and down and articles made of feathers or of down',
+  '68': 'Articles of stone, plaster, cement, asbestos, mica or similar materials',
+  '69': 'Ceramic products',
+  '70': 'Glass and glassware',
+  '71': 'Natural or cultured pearls, precious or semiprecious stones, precious metals',
+  '72': 'Iron and steel',
+  '73': 'Articles of iron or steel',
+  '74': 'Copper and articles thereof',
+  '75': 'Nickel and articles thereof',
+  '76': 'Aluminum and articles thereof',
+  '78': 'Lead and articles thereof',
+  '79': 'Zinc and articles thereof',
+  '80': 'Tin and articles thereof',
+  '81': 'Other base metals; cermets; articles thereof',
+  '82': 'Tools, implements, cutlery, spoons and forks, of base metal',
+  '83': 'Miscellaneous articles of base metal',
+  '84': 'Nuclear reactors, boilers, machinery and mechanical appliances',
+  '85': 'Electrical machinery and equipment and parts thereof',
+  '86': 'Railway or tramway locomotives, rolling stock, track fixtures and fittings',
+  '87': 'Vehicles other than railway or tramway rolling stock',
+  '88': 'Aircraft, spacecraft, and parts thereof',
+  '89': 'Ships, boats and floating structures',
+  '90': 'Optical, photographic, cinematographic, measuring, checking, precision instruments',
+  '91': 'Clocks and watches and parts thereof',
+  '92': 'Musical instruments; parts and accessories of such articles',
+  '93': 'Arms and ammunition; parts and accessories thereof',
+  '94': 'Furniture; bedding, mattresses, cushions and similar stuffed furnishings',
+  '95': 'Toys, games and sports requisites; parts and accessories thereof',
+  '96': 'Miscellaneous manufactured articles',
+  '97': 'Works of art, collectors\' pieces and antiques',
+  '98': 'Special classification provisions',
+  '99': 'Temporary legislation; temporary modifications; additional import restrictions',
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface ClassifyV10Input {
+  description: string;
+  origin?: string;        // ISO country code (e.g., 'CN')
+  destination?: string;   // ISO country code (default: 'US')
+  material?: string;      // Optional material hint
+  useSemanticSearch?: boolean; // Use embedding-based semantic search (faster, more accurate)
+  useSetFit?: boolean;    // Try SetFit ML model first (fastest, 50-100ms)
+}
+
+// AI Reasoning - explains WHY the classification was chosen
+export interface AIReasoning {
+  summary: string; // One sentence summary
+  chapterReasoning: {
+    chapter: string;
+    description: string;
+    explanation: string;
+  };
+  headingReasoning: {
+    heading: string;
+    description: string;
+    explanation: string;
+  };
+  codeReasoning: {
+    code: string;
+    description: string;
+    explanation: string;
+  };
+  keyFactors: Array<{
+    factor: string; // e.g., "Material", "Use", "Construction"
+    value: string; // e.g., "Cotton"
+    impact: 'positive' | 'neutral' | 'uncertain';
+    explanation: string;
+  }>;
+  exclusions?: Array<{
+    code: string;
+    description: string;
+    reason: string;
+  }>;
+  confidence: {
+    level: 'high' | 'medium' | 'low';
+    explanation: string;
+  };
+}
+
+export interface ClassifyV10Result {
+  success: boolean;
+  timing: {
+    total: number;
+    search: number;
+    scoring: number;
+    tariff: number;
+  };
+  
+  primary: {
+    htsCode: string;
+    htsCodeFormatted: string;
+    confidence: number;
+    
+    path: {
+      codes: string[];
+      descriptions: string[];
+      groupings?: string[]; // Parent groupings like "Men's or boys':"
+    };
+    
+    fullDescription: string;
+    shortDescription: string;
+    
+    duty: {
+      baseMfn: string;
+      additional: string;
+      effective: string;
+      special?: string;
+      breakdown?: Array<{ program: string; rate: number; description?: string }>;
+    } | null;
+    
+    isOther: boolean;
+    otherExclusions?: string[];
+    
+    scoringFactors: ScoringFactors;
+  } | null;
+  
+  alternatives: Alternative[];
+  
+  showMore: number;
+  
+  // Detected attributes from input
+  detectedMaterial: string | null;
+  detectedChapters: string[];
+  searchTerms: string[];
+  
+  // AI Reasoning - explains WHY the classification was chosen
+  aiReasoning?: AIReasoning;
+  
+  // SetFit ML model result (when used)
+  setfitUsed?: boolean;
+  setfitLatency?: number;
+  
+  // LLM Reranker result (when used)
+  llmReranking?: {
+    used: boolean;
+    reasoning: string;
+    previousBest?: string;
+    newBest?: string;
+    confidence: number;
+    timing: number;
+  };
+  
+  // Split confidence: heading × code (more transparent than a single blended number)
+  splitConfidence?: {
+    heading: number;      // 0-100: How sure we are about the 4-digit heading
+    code: number;         // 0-100: How sure we are about the specific statistical suffix
+    combined: number;     // heading × code / 100 (the effective confidence)
+    headingExplanation: string; // e.g., "95% sure this is a T-shirt (Ch 61)"
+    codeExplanation: string;   // e.g., "89% sure about the exact statistical suffix"
+  };
+  
+  // Heading classifier result (Phase 0 output)
+  headingPrediction?: {
+    predictions: HeadingPrediction[];
+    method: string;
+    constrained: boolean;
+    timing: number;
+  };
+  
+  // Clarification needed when confidence is too low
+  needsClarification?: {
+    reason: string;
+    question: string;
+    options: { value: string; label: string; hint?: string }[];
+  };
+  
+  // Conditional classification (when siblings have value/size/weight conditions)
+  conditionalClassification?: ConditionalClassificationResult;
+  
+  justification?: string | null;
+}
+
+export interface Alternative {
+  rank: number;
+  htsCode: string;
+  htsCodeFormatted: string;
+  confidence: number;
+  description: string;
+  fullDescription: string;
+  chapter: string;
+  chapterDescription: string;
+  headingDescription?: string;
+  materialNote?: string;
+  duty?: {
+    baseMfn: string;
+    effective: string;
+    effectiveNumeric?: number; // For sorting
+    breakdown?: Array<{ program: string; rate: number; description?: string }>;
+  };
+}
+
+interface ScoringFactors {
+  keywordMatch: number;
+  materialMatch: number;
+  specificity: number;
+  hierarchyCoherence: number;
+  penalties: number;
+  total: number;
+}
+
+interface HtsCandidate {
+  code: string;
+  codeFormatted: string;
+  level?: HtsLevel;
+  description: string;
+  generalRate?: string | null;
+  specialRates?: string | null;
+  keywords?: string[];
+  parentGroupings?: string[];
+  chapter: string;
+  heading?: string | null;
+  parentCode?: string | null;
+  
+  // Computed
+  isOtherCode: boolean;
+  isSpecificCarveOut?: boolean;
+  fullDescription: string;
+  parentDescription?: string | null;
+  
+  // Search relevance
+  similarity?: number;
+  
+  // Scoring
+  score: number;
+  factors: ScoringFactors;
+  otherValidation?: OtherValidation;
+}
+
+interface OtherValidation {
+  isValidOther: boolean;
+  excludedSiblings: { code: string; description: string; reason: string }[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MATERIAL DETECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Map materials to their corresponding HTS chapters
+ */
+const MATERIAL_CHAPTERS: Record<string, string[]> = {
+  'plastic': ['39'],
+  'plastics': ['39'],
+  'silicone': ['39'],
+  'rubber': ['40'],
+  'leather': ['41', '42'],
+  'wood': ['44'],
+  'wooden': ['44'],
+  'bamboo': ['46'],
+  'paper': ['48'],
+  'cardboard': ['48'],
+  'cotton': ['52', '61', '62'],
+  'wool': ['51', '61', '62'],
+  'silk': ['50', '61', '62'],
+  'polyester': ['54', '61', '62'],
+  'nylon': ['54', '61', '62'],
+  'textile': ['50', '51', '52', '53', '54', '55', '56', '57', '58', '59', '60', '61', '62', '63'],
+  'fabric': ['50', '51', '52', '53', '54', '55', '56', '57', '58', '59', '60', '61', '62', '63'],
+  'ceramic': ['69'],
+  'ceramics': ['69'],
+  'porcelain': ['69'],
+  'earthenware': ['69'],
+  'stoneware': ['69'],
+  'terracotta': ['69'],
+  'glass': ['70'],
+  'iron': ['72', '73'],
+  'steel': ['72', '73'],
+  'stainless': ['72', '73'],
+  'copper': ['74'],
+  'brass': ['74'],
+  'bronze': ['74'],
+  'nickel': ['75'],
+  'aluminum': ['76'],
+  'aluminium': ['76'],
+  'zinc': ['79'],
+  'tin': ['80'],
+  'metal': ['72', '73', '74', '75', '76', '78', '79', '80', '81', '82', '83'],
+  'electronics': ['84', '85'],
+  'electronic': ['84', '85'],
+  'electrical': ['85'],
+  'furniture': ['94'],
+};
+
+/**
+ * Extract material from product description
+ */
+function detectMaterial(description: string): string | null {
+  const descLower = description.toLowerCase();
+  
+  // Check for explicit material keywords
+  for (const [material] of Object.entries(MATERIAL_CHAPTERS)) {
+    if (descLower.includes(material)) {
+      return material;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Get chapters for a material
+ */
+function getMaterialChapters(material: string | null): string[] {
+  if (!material) return [];
+  
+  const materialLower = material.toLowerCase();
+  
+  for (const [key, chapters] of Object.entries(MATERIAL_CHAPTERS)) {
+    if (materialLower.includes(key) || key.includes(materialLower)) {
+      return chapters;
+    }
+  }
+  
+  return [];
+}
+
+/**
+ * Product type to HTS heading hints
+ * This helps guide the search to ARTICLE codes, not raw material codes
+ */
+const PRODUCT_TYPE_HINTS: Record<string, { headings: string[]; keywords: string[] }> = {
+  // Household items
+  'planter': { headings: ['3924', '6912', '7323', '4419'], keywords: ['household', 'article', 'container', 'pot'] },
+  'pot': { headings: ['3924', '6912', '7323', '7615'], keywords: ['household', 'article', 'container', 'cooking'] },
+  'container': { headings: ['3923', '3924', '7310', '7612'], keywords: ['container', 'article', 'storage'] },
+  'bottle': { headings: ['3923', '7010'], keywords: ['bottle', 'container'] },
+  'cup': { headings: ['3924', '6912', '7323'], keywords: ['tableware', 'cup', 'drinking'] },
+  'mug': { headings: ['3924', '6912', '7323'], keywords: ['tableware', 'cup', 'mug', 'drinking'] },
+  'plate': { headings: ['3924', '6912', '7323'], keywords: ['tableware', 'plate', 'dish'] },
+  'bowl': { headings: ['3924', '6912', '7323'], keywords: ['tableware', 'bowl', 'kitchenware'] },
+  'box': { headings: ['3923', '4819', '7310'], keywords: ['container', 'box', 'storage'] },
+  'basket': { headings: ['4602', '3926'], keywords: ['basket', 'container', 'wickerwork'] },
+  'bag': { headings: ['3923', '4202', '6305'], keywords: ['bag', 'sack', 'container'] },
+  'case': { headings: ['4202', '3926'], keywords: ['case', 'container', 'carrying'] },
+  
+  // Clothing
+  'shirt': { headings: ['6109', '6105', '6205', '6206'], keywords: ['shirt', 'apparel', 'clothing'] },
+  't-shirt': { headings: ['6109'], keywords: ['t-shirt', 'tshirt', 'knit', 'apparel'] },
+  'tshirt': { headings: ['6109'], keywords: ['t-shirt', 'tshirt', 'knit', 'apparel'] },
+  'pants': { headings: ['6103', '6104', '6203', '6204'], keywords: ['pants', 'trousers', 'apparel'] },
+  'dress': { headings: ['6104', '6204'], keywords: ['dress', 'apparel', 'women'] },
+  'jacket': { headings: ['6101', '6102', '6201', '6202'], keywords: ['jacket', 'coat', 'apparel'] },
+  
+  // Electronics
+  'phone': { headings: ['8517'], keywords: ['telephone', 'cellular', 'mobile'] },
+  'laptop': { headings: ['8471'], keywords: ['computer', 'laptop', 'portable'] },
+  'cable': { headings: ['8544'], keywords: ['cable', 'wire', 'electrical'] },
+  
+  // Furniture
+  'chair': { headings: ['9401'], keywords: ['seat', 'chair', 'furniture'] },
+  'table': { headings: ['9403'], keywords: ['table', 'furniture', 'desk'] },
+  'shelf': { headings: ['9403'], keywords: ['shelf', 'furniture', 'storage'] },
+  
+  // Toys
+  'toy': { headings: ['9503'], keywords: ['toy', 'game', 'plaything'] },
+  'doll': { headings: ['9503'], keywords: ['doll', 'toy', 'figure'] },
+  'game': { headings: ['9504', '9503'], keywords: ['game', 'toy', 'play'] },
+};
+
+/**
+ * Detect product type and get search hints
+ * 
+ * IMPORTANT: We must check more specific terms BEFORE less specific terms!
+ * e.g., "tshirt" must be checked before "shirt" because "tshirt" contains "shirt"
+ * 
+ * Strategy: Sort product types by length (longest first) to ensure specificity
+ */
+function detectProductType(description: string): { type: string | null; headings: string[]; keywords: string[] } {
+  const descLower = description.toLowerCase();
+  
+  // Sort product types by length (longest first) to match most specific term
+  // This prevents "shirt" from matching when user said "tshirt"
+  const sortedTypes = Object.entries(PRODUCT_TYPE_HINTS)
+    .sort((a, b) => b[0].length - a[0].length);
+  
+  for (const [productType, hints] of sortedTypes) {
+    if (descLower.includes(productType)) {
+      return { type: productType, ...hints };
+    }
+  }
+  
+  return { type: null, headings: [], keywords: [] };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TEXT PROCESSING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Tokenize and generate search variations from input
+ */
+function tokenizeInput(description: string): string[] {
+  const tokens = new Set<string>();
+  const descLower = description.toLowerCase().trim();
+  
+  // Split by spaces, hyphens, commas
+  const words = descLower.split(/[\s,\-\/]+/).filter(w => w.length > 1);
+  
+  for (const word of words) {
+    // Skip common words
+    if (['the', 'a', 'an', 'of', 'for', 'and', 'or', 'with', 'to', 'in', 'on'].includes(word)) {
+      continue;
+    }
+    
+    tokens.add(word);
+    
+    // Remove possessives
+    if (word.endsWith("'s")) {
+      tokens.add(word.slice(0, -2));
+    }
+    
+    // Handle plurals
+    if (word.endsWith('s') && word.length > 3) {
+      tokens.add(word.slice(0, -1));
+    }
+    if (word.endsWith('es') && word.length > 4) {
+      tokens.add(word.slice(0, -2));
+    }
+    if (word.endsWith('ies') && word.length > 5) {
+      tokens.add(word.slice(0, -3) + 'y');
+    }
+  }
+  
+  // Add common variations
+  if (descLower.includes('t-shirt') || descLower.includes('tshirt')) {
+    tokens.add('t-shirt');
+    tokens.add('tshirt');
+    tokens.add('shirt');
+  }
+  
+  return Array.from(tokens);
+}
+
+/**
+ * Extract key nouns from HTS description for matching
+ */
+function extractNouns(description: string): string[] {
+  const descLower = description.toLowerCase();
+  
+  // Remove common HTS boilerplate
+  const cleaned = descLower
+    .replace(/other/gi, '')
+    .replace(/articles? of/gi, '')
+    .replace(/parts? (?:and|&) accessories/gi, '')
+    .replace(/not elsewhere specified/gi, '')
+    .replace(/nesoi/gi, '')
+    .replace(/thereof/gi, '')
+    .replace(/:/g, '')
+    .replace(/,/g, ' ');
+  
+  const words = cleaned.split(/\s+/).filter(w => 
+    w.length > 2 && 
+    !['the', 'and', 'for', 'with', 'other', 'not', 'than', 'more'].includes(w)
+  );
+  
+  return words;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// "OTHER" CODE DETECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Check if a description indicates an "Other" catch-all code
+ */
+function isOtherCode(description: string): boolean {
+  const desc = description.toLowerCase().trim();
+  
+  return (
+    desc === 'other' ||
+    desc === 'other:' ||
+    desc.startsWith('other ') ||
+    desc.startsWith('other,') ||
+    desc.startsWith('other:') ||
+    desc.endsWith(': other') ||
+    desc.endsWith(':other') ||
+    desc.includes('not elsewhere specified') ||
+    desc.includes('nesoi') ||
+    desc.includes('n.e.s.o.i')
+  );
+}
+
+/**
+ * Check if a code is a specific carve-out (NOT "Other")
+ * 
+ * LOGIC-BASED (no hardcoding):
+ * - "Other" codes are catch-alls
+ * - General category descriptions (like "articles of plastics") are NOT specific
+ * - Short, concrete descriptions (like "Nursing nipples") ARE specific
+ */
+function isSpecificCarveOut(description: string): boolean {
+  if (isOtherCode(description)) return false;
+  
+  const desc = description.toLowerCase().trim();
+  
+  // General category descriptions are NOT carve-outs
+  const generalPatterns = [
+    'tableware', 'kitchenware', 'household articles', 'articles of',
+    'parts and accessories', 'parts thereof', 'not elsewhere',
+    'of plastics', 'of rubber', 'of metal', 'of wood', 'of glass',
+    'of ceramic', 'of iron', 'of steel', 'of aluminum',
+  ];
+  
+  if (generalPatterns.some(p => desc.includes(p))) {
+    return false;
+  }
+  
+  // Logic-based detection:
+  // Specific carve-outs tend to be:
+  // 1. Short (< 60 characters)
+  // 2. Name concrete products (not categories)
+  // 3. Don't have many commas (not lists of general items)
+  
+  const wordCount = desc.split(/\s+/).length;
+  const commaCount = (desc.match(/,/g) || []).length;
+  
+  // Short descriptions with few commas are likely specific
+  if (desc.length < 60 && wordCount <= 8 && commaCount <= 1) {
+    return true;
+  }
+  
+  // If description looks like a list of specific items (X and Y, X or Y)
+  if ((desc.includes(' and ') || desc.includes(' or ')) && wordCount <= 10 && commaCount <= 2) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Calculate penalty for unmentioned specificity in HTS description
+ * 
+ * When the HTS code has specific requirements that weren't mentioned in the user's query,
+ * we reduce confidence. This prevents 100% confidence on overly-specific matches.
+ * 
+ * Examples:
+ * - User: "cotton tshirt for boys"
+ * - HTS: "T-shirts, all white, short hemmed sleeves, hemmed bottom, crew or round neckline..."
+ * - The user didn't mention: "all white", "short hemmed sleeves", "hemmed bottom", etc.
+ * - These are ASSUMPTIONS, not confirmations → reduce confidence
+ */
+function calculateUnmentionedSpecificityPenalty(
+  htsDescLower: string,
+  productTerms: string[],
+  userQueryLower: string
+): number {
+  let penalty = 0;
+  
+  // Specific qualifiers that indicate restrictive requirements
+  // These reduce confidence when present in HTS but not in user query
+  const specificQualifiers = [
+    // Color/appearance
+    { pattern: /\ball white\b/, term: 'white', penalty: 15 },
+    { pattern: /\bwhite\b/, term: 'white', penalty: 10 },
+    { pattern: /\bblack\b/, term: 'black', penalty: 10 },
+    { pattern: /\bprinted\b/, term: 'print', penalty: 8 },
+    { pattern: /\bdyed\b/, term: 'dye', penalty: 6 },
+    
+    // Garment features
+    { pattern: /\bshort hemmed sleeves?\b/, term: 'short sleeve', penalty: 10 },
+    { pattern: /\blong sleeves?\b/, term: 'long sleeve', penalty: 10 },
+    { pattern: /\bsleeveless\b/, term: 'sleeveless', penalty: 10 },
+    { pattern: /\bhemmed bottom\b/, term: 'hemmed', penalty: 8 },
+    { pattern: /\bcrew.{0,5}neckline\b/, term: 'crew neck', penalty: 8 },
+    { pattern: /\bv.?neck\b/, term: 'v-neck', penalty: 8 },
+    { pattern: /\bround neckline\b/, term: 'round neck', penalty: 8 },
+    { pattern: /\bwithout pockets\b/, term: 'pocket', penalty: 10 },
+    { pattern: /\bwith pockets\b/, term: 'pocket', penalty: 8 },
+    { pattern: /\bwithout.{0,10}trim\b/, term: 'trim', penalty: 8 },
+    { pattern: /\bwithout.{0,10}embroidery\b/, term: 'embroider', penalty: 8 },
+    { pattern: /\bthermal\b/, term: 'thermal', penalty: 12 },
+    { pattern: /\bknitted\b/, term: 'knit', penalty: 5 },
+    { pattern: /\bcrocheted\b/, term: 'crochet', penalty: 8 },
+    
+    // Size/dimensions
+    { pattern: /\bover \d+/, term: 'over', penalty: 12 },
+    { pattern: /\bnot over \d+/, term: 'not over', penalty: 12 },
+    { pattern: /\bvalued over\b/, term: 'value', penalty: 10 },
+    { pattern: /\bvalued not over\b/, term: 'value', penalty: 10 },
+    
+    // Material specifics (when not in query)
+    { pattern: /\b100.?percent\b/, term: '100%', penalty: 8 },
+    { pattern: /\bchiefly of\b/, term: 'chiefly', penalty: 6 },
+  ];
+  
+  for (const qualifier of specificQualifiers) {
+    // Check if HTS has this qualifier
+    if (!qualifier.pattern.test(htsDescLower)) continue;
+    
+    // Check if user mentioned anything related to this qualifier
+    const userMentioned = 
+      userQueryLower.includes(qualifier.term) ||
+      productTerms.some(term => term.includes(qualifier.term) || qualifier.term.includes(term));
+    
+    // If HTS has it but user didn't mention it, add penalty
+    if (!userMentioned) {
+      penalty += qualifier.penalty;
+    }
+  }
+  
+  // Cap penalty at 40 to avoid completely zeroing out good matches
+  return Math.min(40, penalty);
+}
+
+/**
+ * Validate "Other" selection by checking siblings at multiple levels
+ * High confidence when product doesn't match ANY specific sibling
+ * 
+ * This is the KEY LOGIC: Use the HTS tree structure itself as the rules!
+ */
+async function validateOtherSelection(
+  productTerms: string[],
+  otherCode: string,
+  parentCode: string
+): Promise<OtherValidation> {
+  const excludedSiblings: { code: string; description: string; reason: string }[] = [];
+  
+  // Get the subheading code (6 digits) - this is where meaningful carve-outs typically are
+  const normalizedCode = normalizeHtsCode(otherCode);
+  const subheadingCode = normalizedCode.slice(0, 6);
+  
+  // Get all codes under this subheading (tariff lines AND statistical where carve-outs are defined)
+  // Include both levels since some chapters have carve-outs at tariff_line, others at statistical
+  const codesUnderSubheading = await prisma.htsCode.findMany({
+    where: {
+      code: { startsWith: subheadingCode },
+      level: { in: ['tariff_line', 'statistical'] },
+    },
+    select: { code: true, codeFormatted: true, description: true, level: true },
+    orderBy: { code: 'asc' },
+  });
+  
+  // Filter to get siblings at the same level with different descriptions
+  // (codes under same subheading but with a different 8-digit prefix)
+  const our8Digit = normalizedCode.slice(0, 8);
+  let siblings = codesUnderSubheading.filter(c => {
+    const their8Digit = c.code.slice(0, 8);
+    return their8Digit !== our8Digit;
+  });
+  
+  // Debug logging (can be removed in production)
+  // console.log(`[V10 Validate] Subheading ${subheadingCode}, found ${codesUnderSubheading.length} codes, ${siblings.length} siblings`);
+  
+  // Filter to only specific codes (not "Other" codes)
+  const specificSiblings = siblings.filter(s => 
+    !isOtherCode(s.description) && isSpecificCarveOut(s.description)
+  );
+  
+  // If still no specific siblings, we can't validate but assume "Other" is reasonable
+  if (specificSiblings.length === 0) {
+    return {
+      isValidOther: true,
+      excludedSiblings: [], // No exclusions to report, but still valid
+    };
+  }
+  
+  for (const sibling of specificSiblings) {
+    const siblingNouns = extractNouns(sibling.description);
+    
+    // Skip if no meaningful nouns extracted
+    if (siblingNouns.length === 0) continue;
+    
+    // Check if ANY product term matches sibling nouns
+    const hasMatch = productTerms.some(term => 
+      siblingNouns.some(noun => {
+        // Direct match
+        if (term.includes(noun) || noun.includes(term)) return true;
+        // Stem match (for plurals, etc.)
+        if (term.length > 3 && noun.length > 3) {
+          const termStem = term.slice(0, -1);
+          const nounStem = noun.slice(0, -1);
+          if (termStem === nounStem) return true;
+        }
+        return false;
+      })
+    );
+    
+    if (hasMatch) {
+      // Product might match this specific sibling - "Other" may not be correct
+      return {
+        isValidOther: false,
+        excludedSiblings: [{
+          code: sibling.codeFormatted,
+          description: sibling.description,
+          reason: `Product may match "${sibling.description}"`,
+        }],
+      };
+    }
+    
+    // Product does NOT match this sibling - add to exclusion list
+    excludedSiblings.push({
+      code: sibling.codeFormatted,
+      description: sibling.description,
+      reason: `Product is not "${siblingNouns.slice(0, 3).join(', ')}"`,
+    });
+  }
+  
+  // All specific siblings excluded → "Other" is validated as correct
+  return {
+    isValidOther: true,
+    excludedSiblings,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FULL DESCRIPTION BUILDING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Build full legal description from hierarchy + parentGroupings
+ * 
+ * HTS codes have two types of hierarchy:
+ * 1. Code hierarchy: Chapter (61) → Heading (6109) → Subheading (6109.10) → Tariff (6109.10.00.04)
+ * 2. Parent groupings: Indent text like "Men's or boys':" that groups statistical codes
+ * 
+ * Both should be visible in the classification path for accuracy.
+ */
+async function buildFullDescription(code: string): Promise<{ 
+  full: string; 
+  short: string; 
+  path: { codes: string[]; descriptions: string[]; groupings?: string[]; chapterDescription?: string } 
+}> {
+  const hierarchy = await getHtsHierarchy(code);
+  
+  // Get chapter description from our lookup table
+  const chapter = code.slice(0, 2);
+  const chapterDescription = CHAPTER_DESCRIPTIONS[chapter] || `Chapter ${chapter}`;
+  
+  const codes: string[] = [];
+  const descriptions: string[] = [];
+  const groupings: string[] = []; // Separate array for groupings like "Men's or boys':"
+  const segments: string[] = [];
+  
+  for (const node of hierarchy) {
+    codes.push(node.codeFormatted);
+    
+    // Capture parent groupings (the "Other:", "Men's or boys':" rows)
+    // These are critical for accurate classification display
+    if (node.parentGroupings && node.parentGroupings.length > 0) {
+      for (const grouping of node.parentGroupings) {
+        const cleaned = grouping.replace(/:$/, '').trim();
+        if (cleaned && !groupings.includes(cleaned) && cleaned.toLowerCase() !== 'other') {
+          groupings.push(cleaned);
+          segments.push(cleaned);
+        }
+      }
+    }
+    
+    // Add node description
+    const desc = node.description.replace(/:$/, '').trim();
+    if (desc && !segments.some(s => s.toLowerCase() === desc.toLowerCase())) {
+      descriptions.push(desc);
+      
+      // Don't add duplicate "Other" to segments
+      if (desc.toLowerCase() !== 'other' || segments.length === 0) {
+        segments.push(desc);
+      }
+    }
+  }
+  
+  // Get short description (leaf node)
+  const leafNode = hierarchy[hierarchy.length - 1];
+  const shortDesc = leafNode?.description || '';
+  
+  return {
+    full: segments.join(': '),
+    short: shortDesc,
+    path: { codes, descriptions, groupings, chapterDescription },
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SCORING ALGORITHM
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Calculate score for a candidate HTS code
+ */
+function calculateScore(
+  userQueryLower: string,  // Original user query (lowercase)
+  productTerms: string[],
+  productMaterial: string | null,
+  productTypeHints: { type: string | null; headings: string[]; keywords: string[] },
+  candidate: {
+    code: string;
+    description: string;
+    keywords: string[];
+    chapter: string;
+    heading: string | null;
+    parentDescription?: string | null;
+    headingDescription?: string | null; // Full heading description (e.g., "T-shirts, singlets, tank tops...")
+    subheadingDescription?: string | null; // 6-digit subheading description (e.g., "Of man-made fibers")
+    parentGroupings?: string[]; // Intermediate groupings (e.g., "Men's or boys'", "Other T-shirts")
+    isOtherCode: boolean;
+    isSpecificCarveOut: boolean;
+    otherValidation?: OtherValidation;
+  }
+): ScoringFactors {
+  const factors: ScoringFactors = {
+    keywordMatch: 0,
+    materialMatch: 0,
+    specificity: 0,
+    hierarchyCoherence: 0,
+    penalties: 0,
+    total: 0,
+  };
+  
+  // 1. KEYWORD MATCH (0-60 points)
+  const descLower = candidate.description.toLowerCase();
+  const keywordsLower = candidate.keywords.map(k => k.toLowerCase());
+  
+  // EXACT MATCH DETECTION: When the HTS description literally names the product
+  // e.g., "confetti" → "Confetti, paper spirals..." = NEAR-PERFECT MATCH
+  // This is the strongest possible signal and should result in HIGH confidence
+  
+  // Check if description STARTS with the product term (strongest signal)
+  const descFirstWord = descLower.split(/[\s,;:]+/)[0] || '';
+  const startsWithProduct = productTerms.some(term => 
+    descFirstWord === term || descFirstWord === term + 's' || term === descFirstWord + 's'
+  );
+  
+  if (startsWithProduct) {
+    factors.keywordMatch += 50; // Very high boost - description starts with product name
+  } else {
+    // Check if product term appears as a primary item in a comma-separated list
+    const descPrimaryTerms = descLower.split(/[,;:]/).map(s => s.trim().split(/\s+/)[0] || '').filter(Boolean);
+    const hasExactPrimaryMatch = productTerms.some(term => 
+      descPrimaryTerms.some(primary => primary === term || primary === term + 's')
+    );
+    
+    if (hasExactPrimaryMatch) {
+      factors.keywordMatch += 35; // Major boost for exact primary match
+    }
+  }
+  
+  // Check keyword array matches
+  const keywordHits = productTerms.filter(term => 
+    keywordsLower.some(kw => kw.includes(term) || term.includes(kw))
+  );
+  factors.keywordMatch += Math.min(15, keywordHits.length * 6);
+  
+  // Check description matches (general)
+  const descHits = productTerms.filter(term => descLower.includes(term));
+  factors.keywordMatch += Math.min(10, descHits.length * 4);
+  
+  factors.keywordMatch = Math.min(60, factors.keywordMatch);
+  
+  // 2. MATERIAL MATCH (0-30 points)
+  if (productMaterial) {
+    const materialChapters = getMaterialChapters(productMaterial);
+    if (materialChapters.includes(candidate.chapter)) {
+      factors.materialMatch = 30;
+    } else if (materialChapters.length > 0) {
+      // Material mismatch - penalize
+      factors.penalties -= 20;
+    }
+    
+    // 2a. DESCRIPTION MATERIAL MISMATCH
+    // When user specifies a material (e.g., "cotton") but the HTS description 
+    // specifies a DIFFERENT material (e.g., "Of man-made fibers"), that's a major red flag
+    // 
+    // CRITICAL: Check not just the leaf description, but also:
+    // - Parent description (immediate parent)
+    // - Subheading description (6-digit level, often contains material)
+    // e.g., code 6205.30.20.40 has "Of man-made fibers" at the 6205.30 level
+    const conflictingMaterials = [
+      { pattern: /man-made fibers?|synthetic|polyester|nylon|acrylic/i, conflicts: ['cotton', 'wool', 'silk', 'linen'] },
+      { pattern: /\bcotton\b/i, conflicts: ['polyester', 'nylon', 'synthetic', 'man-made'] },
+      { pattern: /\bwool\b/i, conflicts: ['cotton', 'polyester', 'synthetic', 'man-made'] },
+      { pattern: /\bsilk\b/i, conflicts: ['cotton', 'polyester', 'synthetic', 'man-made'] },
+    ];
+    
+    // Combine all relevant descriptions for material checking
+    const allDescriptions = [
+      descLower,
+      candidate.parentDescription?.toLowerCase() || '',
+      candidate.subheadingDescription?.toLowerCase() || '',
+    ].join(' ');
+    
+    const materialLower = productMaterial.toLowerCase();
+    for (const check of conflictingMaterials) {
+      // If ANY level of HTS hierarchy mentions this material category
+      if (check.pattern.test(allDescriptions)) {
+        // And user's material conflicts with it
+        if (check.conflicts.some(c => materialLower.includes(c))) {
+          factors.penalties -= 50; // HEAVY penalty for material mismatch anywhere in hierarchy
+          console.log(`[V10 Scoring] Material conflict for ${candidate.code}: user="${productMaterial}" vs HTS="${allDescriptions.match(check.pattern)?.[0]}"`);
+          break;
+        }
+      }
+    }
+  }
+  
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // PRODUCT TYPE PRIORITY SCORING - THE MOST IMPORTANT FACTOR
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // 
+  // The HTS hierarchy is structured as:
+  //   HEADING (4-digit) = WHAT IS THE PRODUCT?  (e.g., 6109 = T-shirts, 6205 = Shirts)
+  //   SUBHEADING (6-digit) = WHAT MATERIAL?     (e.g., 6109.10 = Of cotton)
+  //   STATISTICAL (8-10 digit) = WHO/SPECIFICS  (e.g., 6109.10.00.14 = Boys')
+  //
+  // Getting the heading wrong means the ENTIRE classification is wrong.
+  // A cotton t-shirt classified under "shirts" (6205) instead of "t-shirts" (6109)
+  // is fundamentally incorrect, regardless of material or demographic match.
+  //
+  // Therefore: PRODUCT TYPE (heading) must be a GATING function, not just a factor.
+  // If product type is detected AND the candidate is in the WRONG heading,
+  // apply a SEVERE penalty that cannot be overcome by other factors.
+  //
+  // This is NOT hardcoding - it's using domain knowledge about how HTS works.
+  // The PRODUCT_TYPE_HINTS map is general knowledge (t-shirts → heading 6109),
+  // not specific product rules.
+  // ═══════════════════════════════════════════════════════════════════════════════
+  
+  if (productTypeHints.type && productTypeHints.headings.length > 0 && candidate.heading) {
+    // Check if candidate is in one of the expected headings for this product type
+    const isInExpectedHeading = productTypeHints.headings.includes(candidate.heading);
+    
+    // Also check heading description directly - more robust for edge cases
+    // e.g., "tshirt" should match "T-shirts, singlets, tank tops..."
+    let headingDescriptionMatches = false;
+    if (candidate.headingDescription) {
+      const headingLower = candidate.headingDescription.toLowerCase();
+      const typeVariants = [
+        productTypeHints.type,
+        productTypeHints.type.replace('-', ''),
+        productTypeHints.type + 's',
+        productTypeHints.type.replace('s', ''),
+      ];
+      headingDescriptionMatches = typeVariants.some(v => headingLower.includes(v));
+    }
+    
+    if (isInExpectedHeading || headingDescriptionMatches) {
+      // CORRECT product type - significant boost
+      factors.hierarchyCoherence += 30;
+      console.log(`[V10 Scoring] Product type MATCH for ${candidate.code}: "${productTypeHints.type}" → heading ${candidate.heading}`);
+    } else {
+      // WRONG product type - this is a fundamental misclassification
+      // Apply a severe penalty that effectively caps confidence at ~50-60%
+      factors.penalties -= 50;
+      console.log(`[V10 Scoring] Product type MISMATCH for ${candidate.code}: "${productTypeHints.type}" expects headings [${productTypeHints.headings.join(', ')}], got ${candidate.heading}`);
+    }
+  }
+  
+  // 3. SPECIFICITY (0-20 points)
+  if (candidate.isSpecificCarveOut) {
+    // Specific codes are best IF product matches
+    const matchesCarveOut = productTerms.some(term => 
+      descLower.includes(term) || 
+      keywordsLower.some(kw => kw.includes(term))
+    );
+    
+    if (matchesCarveOut) {
+      factors.specificity = 20;
+    } else {
+      // Product doesn't match this specific carve-out - penalize heavily
+      factors.penalties -= 40;
+    }
+  } else if (candidate.isOtherCode) {
+    if (candidate.otherValidation?.isValidOther) {
+      factors.specificity = 15; // "Other" with verified exclusions
+    } else {
+      factors.specificity = 8; // "Other" without verification
+    }
+  } else {
+    factors.specificity = 10; // General category
+  }
+  
+  // 4. HIERARCHY COHERENCE (0-25 points)
+  // Check both parent description and heading description
+  if (candidate.parentDescription) {
+    const parentLower = candidate.parentDescription.toLowerCase();
+    const parentHits = productTerms.filter(term => parentLower.includes(term));
+    factors.hierarchyCoherence = Math.min(10, parentHits.length * 4);
+  }
+  
+  // 4b. ADDITIONAL HEADING DESCRIPTION MATCHING
+  // This provides a secondary boost when product terms appear directly in the heading description.
+  // This works alongside the product type priority scoring (above) to handle cases
+  // where the product type wasn't detected but terms still match the heading.
+  // e.g., if user says "singlet" (not in PRODUCT_TYPE_HINTS), we still want to boost 6109.
+  if (candidate.headingDescription && !productTypeHints.type) {
+    // Only apply this if product type wasn't detected (avoids double-counting)
+    const headingLower = candidate.headingDescription.toLowerCase();
+    
+    for (const term of productTerms) {
+      const termVariants = [
+        term,
+        term.replace('-', ''),
+        term.replace('s', ''),
+        term + 's',
+      ];
+      
+      for (const variant of termVariants) {
+        if (headingLower.includes(variant)) {
+          factors.hierarchyCoherence += 15;
+          break;
+        }
+      }
+    }
+    
+    factors.hierarchyCoherence = Math.min(45, factors.hierarchyCoherence);
+  }
+  
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // USER SEGMENT MATCHING - Prefer 10-digit codes when user specifies demographics
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // 
+  // HTS 10-digit statistical codes often specify demographics: boys, men, women, girls
+  // If user says "cotton tshirt for boys", we should prefer:
+  //   6109.10.00.14 "Boys' (338)" over 6109.10.00 "Of cotton"
+  // 
+  // Check both the description AND parentGroupings for segment matches
+  const userSegments = ['boys', 'boy', 'girls', 'girl', 'men', 'mens', 'women', 'womens'];
+  const detectedSegment = productTerms.find(term => userSegments.includes(term.toLowerCase()));
+  
+  if (detectedSegment) {
+    const segmentLower = detectedSegment.toLowerCase();
+    const allDescText = [
+      descLower,
+      ...(candidate.parentGroupings || []).map(g => g.toLowerCase())
+    ].join(' ');
+    
+    // Check if this code matches the user's demographic
+    const segmentVariants = [segmentLower, segmentLower + "'s", segmentLower.replace('s', '') + "'s"];
+    const matchesSegment = segmentVariants.some(v => allDescText.includes(v));
+    
+    if (matchesSegment) {
+      // This code specifically matches the user's demographic - big boost!
+      factors.keywordMatch += 25;
+      console.log(`[V10 Scoring] Segment match for ${candidate.code}: "${detectedSegment}" found in "${allDescText.slice(0, 50)}..."`);
+    } else if (candidate.code.length === 8) {
+      // This is an 8-digit code and user specified a segment
+      // They likely want a more specific 10-digit code, so penalize
+      factors.penalties -= 15;
+      console.log(`[V10 Scoring] Segment preference penalty for ${candidate.code}: user wants "${detectedSegment}" but code is 8-digit general`);
+    }
+  }
+  
+  // 5. DYNAMIC MISMATCH DETECTION (No hardcoding!)
+  // If this is a SPECIFIC code (not "Other"), check if product matches its description
+  // by extracting key nouns from the HTS description and comparing to product terms
+  if (candidate.isSpecificCarveOut) {
+    const htsNouns = extractNouns(candidate.description);
+    
+    // Check if ANY product term matches ANY HTS noun
+    const hasOverlap = productTerms.some(pt => 
+      htsNouns.some(hn => 
+        pt.includes(hn) || hn.includes(pt) ||
+        (pt.length > 3 && hn.length > 3 && pt.slice(0, 4) === hn.slice(0, 4))
+      )
+    );
+    
+    if (!hasOverlap && htsNouns.length > 0) {
+      // Product doesn't match this specific code's description
+      factors.penalties -= 40;
+    }
+  }
+  
+  // 5b. UNMENTIONED SPECIFICITY PENALTY
+  // When HTS description has specific qualifiers that the user didn't mention,
+  // we should reduce confidence. The more unmentioned specifics, the lower the confidence.
+  // 
+  // Examples: "all white", "without pockets", "short hemmed sleeves", "thermal"
+  // If user just says "cotton tshirt for boys" but HTS says "all white, without pockets",
+  // that's a lot of assumptions we're making!
+  const specificityPenalty = calculateUnmentionedSpecificityPenalty(
+    descLower,
+    productTerms,
+    userQueryLower
+  );
+  factors.penalties -= specificityPenalty;
+  
+  // 6. "OTHER" CODE VALIDATION (The KEY logic-based insight!)
+  // This is where we USE THE HTS STRUCTURE ITSELF as the rules
+  // If we validated that the product doesn't match any specific sibling → "Other" is correct
+  if (candidate.isOtherCode && candidate.otherValidation) {
+    if (candidate.otherValidation.isValidOther) {
+      // All siblings were excluded - "Other" is VALIDATED as correct
+      // Boost based on how many siblings we excluded (more exclusions = higher confidence)
+      const siblingCount = candidate.otherValidation.excludedSiblings.length;
+      factors.specificity += Math.min(25, 10 + siblingCount * 3); // +10 base, up to +25 total
+    } else {
+      // Product might match a specific sibling - this "Other" might be wrong
+      factors.penalties -= 25;
+    }
+  } else if (candidate.isOtherCode && !candidate.otherValidation) {
+    // "Other" code but we couldn't validate it - slight penalty for uncertainty
+    factors.penalties -= 5;
+  }
+  
+  // Calculate total
+  factors.total = Math.max(0, Math.min(100,
+    factors.keywordMatch +
+    factors.materialMatch +
+    factors.specificity +
+    factors.hierarchyCoherence +
+    factors.penalties
+  ));
+  
+  return factors;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AI REASONING GENERATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Generate human-readable AI reasoning for why a classification was chosen.
+ * This explains the decision-making process to help users understand and verify.
+ */
+function generateAIReasoning(
+  productDescription: string,
+  primary: HtsCandidate,
+  path: { codes: string[]; descriptions: string[]; groupings?: string[]; chapterDescription?: string },
+  detectedMaterial: string | null,
+  productType: { type: string | null; headings: string[]; keywords: string[] },
+  searchTerms: string[],
+): AIReasoning {
+  const chapter = primary.code.slice(0, 2);
+  const heading = primary.code.slice(0, 4);
+  const chapterDesc = CHAPTER_DESCRIPTIONS[chapter] || `Chapter ${chapter}`;
+  
+  // Build chapter reasoning
+  let chapterExplanation = '';
+  if (detectedMaterial) {
+    const materialChapters = getMaterialChapters(detectedMaterial);
+    if (materialChapters.includes(chapter)) {
+      chapterExplanation = `Your product is made of ${detectedMaterial}, which is classified in Chapter ${chapter} (${chapterDesc}).`;
+    } else {
+      chapterExplanation = `Chapter ${chapter} covers ${chapterDesc.toLowerCase()}. While your product contains ${detectedMaterial}, its essential character or use places it in this chapter.`;
+    }
+  } else {
+    chapterExplanation = `Based on the product description, this falls under Chapter ${chapter} which covers ${chapterDesc.toLowerCase()}.`;
+  }
+  
+  // Build heading reasoning
+  const headingDesc = path.descriptions[1] || primary.parentDescription || '';
+  let headingExplanation = '';
+  if (productType.type && productType.headings.includes(heading)) {
+    headingExplanation = `Heading ${heading} specifically covers "${headingDesc}". Your product description mentions "${productType.type}" which matches this heading.`;
+  } else {
+    headingExplanation = `Heading ${heading} covers "${headingDesc}". Based on the keywords in your description (${searchTerms.slice(0, 3).join(', ')}), this heading best describes your product.`;
+  }
+  
+  // Build code reasoning
+  let codeExplanation = '';
+  if (primary.isOtherCode) {
+    codeExplanation = `This is an "Other" code under this heading. Your product doesn't match any of the specific carve-out codes, so it falls into this catch-all category.`;
+    if (primary.otherValidation?.excludedSiblings?.length) {
+      codeExplanation += ` We verified it's not: ${primary.otherValidation.excludedSiblings.slice(0, 3).map(s => s.description).join(', ')}.`;
+    }
+  } else if (primary.isSpecificCarveOut) {
+    codeExplanation = `This is a specific code for "${primary.description}". Your product directly matches this description.`;
+  } else {
+    codeExplanation = `Code ${primary.codeFormatted} specifically covers "${primary.description}" under this heading.`;
+  }
+  
+  // Build key factors
+  const keyFactors: AIReasoning['keyFactors'] = [];
+  
+  // Material factor
+  if (detectedMaterial) {
+    const materialChapters = getMaterialChapters(detectedMaterial);
+    const materialMatches = materialChapters.includes(chapter);
+    keyFactors.push({
+      factor: 'Material',
+      value: detectedMaterial.charAt(0).toUpperCase() + detectedMaterial.slice(1),
+      impact: materialMatches ? 'positive' : 'neutral',
+      explanation: materialMatches 
+        ? `${detectedMaterial} is typically classified in Chapter ${chapter}.`
+        : `Material noted, but classification is based on product's essential character.`,
+    });
+  }
+  
+  // Product type factor
+  if (productType.type) {
+    const typeMatches = productType.headings.includes(heading);
+    keyFactors.push({
+      factor: 'Product Type',
+      value: productType.type.charAt(0).toUpperCase() + productType.type.slice(1),
+      impact: typeMatches ? 'positive' : 'uncertain',
+      explanation: typeMatches
+        ? `"${productType.type}" products are classified under heading ${heading}.`
+        : `Product type identified, but heading may vary based on other factors.`,
+    });
+  }
+  
+  // Parent groupings factor (e.g., "Men's or boys'")
+  if (primary.parentGroupings && primary.parentGroupings.length > 0) {
+    const relevantGroupings = primary.parentGroupings.filter(g => g.toLowerCase() !== 'other');
+    if (relevantGroupings.length > 0) {
+      keyFactors.push({
+        factor: 'Category',
+        value: relevantGroupings[0],
+        impact: 'positive',
+        explanation: `Your product falls under the "${relevantGroupings[0]}" category within this heading.`,
+      });
+    }
+  }
+  
+  // Keyword match factor
+  if (primary.factors.keywordMatch >= 30) {
+    keyFactors.push({
+      factor: 'Description Match',
+      value: 'Strong',
+      impact: 'positive',
+      explanation: `Key terms from your description closely match the HTS code description.`,
+    });
+  } else if (primary.factors.keywordMatch >= 15) {
+    keyFactors.push({
+      factor: 'Description Match',
+      value: 'Moderate',
+      impact: 'neutral',
+      explanation: `Some terms from your description match the HTS code description.`,
+    });
+  }
+  
+  // Build exclusions (for "Other" codes)
+  let exclusions: AIReasoning['exclusions'] | undefined;
+  if (primary.isOtherCode && primary.otherValidation?.excludedSiblings?.length) {
+    exclusions = primary.otherValidation.excludedSiblings.map(sibling => ({
+      code: sibling.code,
+      description: sibling.description,
+      reason: sibling.reason,
+    }));
+  }
+  
+  // Confidence explanation
+  const confidence = primary.score;
+  let confidenceLevel: 'high' | 'medium' | 'low';
+  let confidenceExplanation: string;
+  
+  if (confidence >= 70) {
+    confidenceLevel = 'high';
+    confidenceExplanation = 'Strong match based on material, product type, and description keywords.';
+  } else if (confidence >= 45) {
+    confidenceLevel = 'medium';
+    confidenceExplanation = 'Reasonable match, but consider reviewing alternatives if your product has unusual characteristics.';
+  } else {
+    confidenceLevel = 'low';
+    confidenceExplanation = 'Limited match - please provide more details about material, use, or construction for better accuracy.';
+  }
+  
+  // Build summary
+  const summary = `Classified as ${primary.codeFormatted} (${chapterDesc}) ${
+    detectedMaterial ? `based on ${detectedMaterial} material` : ''
+  }${productType.type ? `${detectedMaterial ? ' and' : 'based on'} "${productType.type}" product type` : ''}.`;
+  
+  return {
+    summary: summary.trim(),
+    chapterReasoning: {
+      chapter,
+      description: chapterDesc,
+      explanation: chapterExplanation,
+    },
+    headingReasoning: {
+      heading,
+      description: headingDesc,
+      explanation: headingExplanation,
+    },
+    codeReasoning: {
+      code: primary.codeFormatted,
+      description: primary.description,
+      explanation: codeExplanation,
+    },
+    keyFactors,
+    exclusions,
+    confidence: {
+      level: confidenceLevel,
+      explanation: confidenceExplanation,
+    },
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN CLASSIFICATION FUNCTION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Classify a product description to HTS code
+ * Target: <2 seconds total
+ */
+export async function classifyV10(input: ClassifyV10Input): Promise<ClassifyV10Result> {
+  const startTime = Date.now();
+  let searchTime = 0;
+  let scoringTime = 0;
+  let tariffTime = 0;
+  
+  const { description, origin, destination = 'US', material: inputMaterial } = input;
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PHASE 0: HEADING PREDICTION (New — gates the entire search)
+  // 
+  // Predicts top 3 HTS headings (4-digit) BEFORE search begins.
+  // When confidence is high (>70%), search is constrained to predicted headings,
+  // eliminating chapter-level errors and reducing search space by ~95%.
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  const headingResult = await predictHeadings(description, {
+    material: inputMaterial,
+    useSetFit: input.useSetFit !== false,
+    useAI: true,
+  });
+  
+  console.log(`[V10] Phase 0 heading prediction: ${headingResult.predictions.map(p => `${p.heading}(${p.headingConfidence}%)`).join(', ')} in ${headingResult.timing}ms`);
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PHASE 1: TOKENIZE & DETECT MATERIAL
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  const searchTerms = tokenizeInput(description);
+  const detectedMaterial = inputMaterial || headingResult.detected.material || detectMaterial(description);
+  const materialChapters = getMaterialChapters(detectedMaterial);
+  const productTypeHints = detectProductType(description);
+  
+  // Merge heading classifier's product type detection with existing detection
+  if (!productTypeHints.type && headingResult.detected.productType) {
+    productTypeHints.type = headingResult.detected.productType;
+    // Add the predicted headings as hints
+    productTypeHints.headings = headingResult.predictions.map(p => p.heading);
+  }
+  
+  // Expand search terms with product type keywords
+  const expandedTerms = [...new Set([
+    ...searchTerms, 
+    ...productTypeHints.keywords
+  ])];
+  
+  console.log('[V10] Search terms:', searchTerms);
+  console.log('[V10] Detected material:', detectedMaterial);
+  console.log('[V10] Material chapters:', materialChapters);
+  console.log('[V10] Product type:', productTypeHints.type);
+  console.log('[V10] Product headings hint:', productTypeHints.headings);
+  console.log('[V10] Heading constraint:', headingResult.shouldConstrain ? `YES → ${headingResult.predictions.map(p => p.heading).join(', ')}` : 'NO (open search)');
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PHASE 1.5: TRY SETFIT FAST PATH (if enabled and available)
+  // Now integrated with heading classifier — SetFit is used for heading prediction
+  // in Phase 0, and only used here for direct code prediction with high confidence.
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  const useSetFit = input.useSetFit !== false; // Default to true
+  let setfitResult: Awaited<ReturnType<typeof classifyWithSetFit>> | null = null;
+  
+  if (useSetFit) {
+    try {
+      console.log('[V10] Trying SetFit fast path...');
+      setfitResult = await classifyWithSetFit(description);
+      
+      // If SetFit has high confidence (>80%), use it directly
+      // BUT validate against heading prediction to catch chapter-level errors
+      if (setfitResult && setfitResult.predictions[0]?.confidence > 0.80) {
+        const setfitCode = setfitResult.predictions[0].code;
+        const setfitHeading = setfitCode.slice(0, 4);
+        const setfitChapter = setfitCode.slice(0, 2);
+        
+        // Validate: SetFit's heading should not conflict with heading classifier
+        const headingConflict = headingResult.shouldConstrain && 
+          !headingResult.predictions.some(p => p.heading === setfitHeading) &&
+          !headingResult.excludedChapters.has(setfitChapter) === false;
+        
+        // Also check exclusion rules
+        const chapterExcluded = headingResult.excludedChapters.has(setfitChapter);
+        
+        if (chapterExcluded) {
+          console.log(`[V10] SetFit predicted ${setfitCode} but Chapter ${setfitChapter} is EXCLUDED by rule. Falling back.`);
+        } else if (headingConflict) {
+          console.log(`[V10] SetFit heading ${setfitHeading} conflicts with heading classifier ${headingResult.predictions.map(p => p.heading).join(', ')}. Falling back.`);
+        } else {
+          console.log(`[V10] SetFit high confidence: ${setfitCode} (${(setfitResult.predictions[0].confidence * 100).toFixed(1)}%)`);
+          
+          // Fetch the HTS code details from database
+          const htsCode = await prisma.htsCode.findUnique({
+            where: { code: setfitCode }
+          });
+          
+          if (htsCode) {
+            // Use SetFit result as primary, skip semantic search
+            console.log('[V10] Using SetFit result, skipping semantic search');
+            
+            // Build result using SetFit prediction
+            const primaryDesc = await buildFullDescription(htsCode.code);
+            
+            // Build duty info matching the expected format
+            let setfitDutyInfo: ClassifyV10Result['primary'] extends null ? never : NonNullable<ClassifyV10Result['primary']>['duty'] = null;
+            if (origin) {
+              try {
+                const baseMfnRate = htsCode.generalRate ? parseFloat(htsCode.generalRate) || 0 : 0;
+                const tariff = await getEffectiveTariff(origin, htsCode.code, { baseMfnRate });
+                setfitDutyInfo = {
+                  baseMfn: htsCode.generalRate || 'N/A',
+                  additional: tariff.ieepaBreakdown.baseline + tariff.ieepaBreakdown.fentanyl + tariff.ieepaBreakdown.reciprocal + tariff.section301Rate + tariff.section232Rate > 0
+                    ? `+${(tariff.ieepaBreakdown.baseline + tariff.ieepaBreakdown.fentanyl + tariff.ieepaBreakdown.reciprocal + tariff.section301Rate + tariff.section232Rate).toFixed(1)}%`
+                    : 'None',
+                  effective: `${tariff.effectiveRate.toFixed(1)}%`,
+                };
+              } catch (err) {
+                console.error('[V10] SetFit tariff lookup error:', err);
+              }
+            }
+            
+            // Split confidence for SetFit: heading confidence from classifier, code confidence from SetFit
+            const setfitCodeConfidence = Math.round(setfitResult.predictions[0].confidence * 100);
+            const setfitHeadingConf = headingResult.predictions.find(p => p.heading === setfitHeading)?.headingConfidence || setfitCodeConfidence;
+            const combinedConfidence = Math.round(setfitHeadingConf * setfitCodeConfidence / 100);
+            
+            return {
+              success: true,
+              timing: {
+                total: Date.now() - startTime,
+                search: setfitResult.latency_ms,
+                scoring: 0,
+                tariff: 0,
+              },
+              primary: {
+                htsCode: htsCode.code,
+                htsCodeFormatted: htsCode.codeFormatted,
+                confidence: combinedConfidence,
+                path: primaryDesc.path,
+                fullDescription: primaryDesc.full,
+                shortDescription: htsCode.description,
+                duty: setfitDutyInfo,
+                isOther: false,
+                scoringFactors: {
+                  keywordMatch: 0,
+                  materialMatch: 0,
+                  specificity: 0,
+                  hierarchyCoherence: 0,
+                  penalties: 0,
+                  total: combinedConfidence,
+                },
+              },
+              alternatives: [],
+              showMore: 0,
+              detectedMaterial,
+              detectedChapters: materialChapters,
+              searchTerms,
+              aiReasoning: `Classified using ML model with ${setfitCodeConfidence}% code confidence and ${setfitHeadingConf}% heading confidence.`,
+              setfitUsed: true,
+              setfitLatency: setfitResult.latency_ms,
+              splitConfidence: {
+                heading: setfitHeadingConf,
+                code: setfitCodeConfidence,
+                combined: combinedConfidence,
+                headingExplanation: `${setfitHeadingConf}% confident about heading ${setfitHeading}`,
+                codeExplanation: `${setfitCodeConfidence}% confident about exact code (ML model)`,
+              },
+              headingPrediction: {
+                predictions: headingResult.predictions,
+                method: headingResult.method,
+                constrained: headingResult.shouldConstrain,
+                timing: headingResult.timing,
+              },
+            };
+          }
+        }
+      } else if (setfitResult) {
+        console.log(`[V10] SetFit low confidence (${(setfitResult.predictions[0]?.confidence * 100 || 0).toFixed(1)}%), falling back to semantic search`);
+      }
+    } catch (error) {
+      console.log('[V10] SetFit failed, falling back to semantic search:', error);
+    }
+  }
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PHASE 2: SEARCH - Constrained by Heading Prediction
+  // 
+  // When heading classifier has high confidence (>70%), search ONLY within
+  // predicted headings. This eliminates chapter-level errors and reduces
+  // search space by ~95%.
+  // 
+  // When confidence is low, fall back to full-spectrum search.
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  const searchStart = Date.now();
+  let allResults: Awaited<ReturnType<typeof prisma.htsCode.findMany>> = [];
+  let usedSemanticSearch = false;
+  
+  // Build the heading constraint from Phase 0
+  const constrainedHeadings = headingResult.shouldConstrain 
+    ? headingResult.predictions.map(p => p.heading)
+    : [];
+  
+  // If constrained, also do a direct DB lookup for codes in predicted headings
+  // This is the FASTEST path — no embeddings needed, just heading filter
+  if (constrainedHeadings.length > 0) {
+    console.log(`[V10] CONSTRAINED SEARCH: Searching within headings ${constrainedHeadings.join(', ')}`);
+    
+    const constrainedResults = await prisma.htsCode.findMany({
+      where: {
+        heading: { in: constrainedHeadings },
+        level: { in: ['statistical', 'tariff_line'] },
+      },
+      orderBy: { code: 'asc' },
+      take: 100, // Get more codes since we're in a narrow heading
+    });
+    
+    allResults = constrainedResults;
+    usedSemanticSearch = true; // Skip further search if we have good results
+    console.log(`[V10] Constrained search found ${constrainedResults.length} codes in ${constrainedHeadings.length} headings`);
+  }
+  
+  // Check if embeddings are available and semantic search is enabled
+  const useSemanticSearch = input.useSemanticSearch !== false; // Default to true
+  
+  // Run semantic search if: not constrained, or constrained results are sparse
+  if (useSemanticSearch && (!headingResult.shouldConstrain || allResults.length < 5)) {
+    try {
+      // Check embedding coverage
+      const stats = await getEmbeddingStats();
+      
+      if (stats.withEmbeddings > 1000) { // Need at least some embeddings
+        const searchMode = stats.hybridSearchAvailable ? 'HYBRID (Semantic + Lexical)' : 'SEMANTIC';
+        console.log(`[V10] Using ${searchMode} SEARCH (${stats.coverage} embedding coverage)`);
+        
+        // CRITICAL: Enrich the query with product type context
+        // This prevents "indoor planter" from matching "greenhouse vegetables"
+        // by adding "container pot household" to clarify intent
+        const productTypeContext = productTypeHints.keywords.length > 0
+          ? productTypeHints.keywords.join(' ')
+          : '';
+        
+        // Build enriched search query
+        const enrichedDescription = productTypeContext
+          ? `${description} ${productTypeContext}`
+          : description;
+        
+        console.log(`[V10] Enriched query: "${enrichedDescription}"`);
+        
+        // Merge heading predictions with product type hints for semantic search
+        const allPreferredHeadings = [
+          ...new Set([
+            ...productTypeHints.headings,
+            ...constrainedHeadings,
+          ])
+        ];
+        
+        // Use dual-path search for material + function
+        // HYBRID SEARCH: Combines semantic (embeddings) + lexical (BM25) for best accuracy
+        const semanticResults = await dualPathSearch(
+          detectedMaterial,
+          enrichedDescription,
+          { 
+            limit: 50,
+            // Restrict to relevant headings (from both product type and heading classifier)
+            preferredHeadings: allPreferredHeadings.length > 0 ? allPreferredHeadings : productTypeHints.headings,
+            // Enable hybrid search (semantic + lexical)
+            useHybrid: stats.hybridSearchAvailable !== false,
+          }
+        );
+        
+        if (semanticResults.length > 0) {
+          // Two-tier filtering: strict threshold for primary, lenient for alternatives
+          // This ensures we show diverse options (different chapters/materials)
+          const PRIMARY_THRESHOLD = 0.4;    // High quality for main result
+          const ALTERNATIVE_THRESHOLD = 0.2; // Include diverse options even with lower match
+          
+          // Get all results above the lenient threshold, filtering out excluded chapters
+          const allViable = semanticResults.filter(r => {
+            if (r.similarity < ALTERNATIVE_THRESHOLD) return false;
+            // Filter out codes in excluded chapters (from chapter exclusion rules)
+            const chapter = r.code.substring(0, 2);
+            if (headingResult.excludedChapters.has(chapter)) {
+              console.log(`[V10] Filtering semantic result ${r.code} — Chapter ${chapter} excluded by rule`);
+              return false;
+            }
+            return true;
+          });
+          
+          // Ensure chapter diversity - keep at least one result per chapter if above alt threshold
+          const chapterBest = new Map<string, typeof semanticResults[0]>();
+          for (const r of allViable) {
+            const chapter = r.code.substring(0, 2);
+            const existing = chapterBest.get(chapter);
+            if (!existing || r.similarity > existing.similarity) {
+              chapterBest.set(chapter, r);
+            }
+          }
+          
+          // Start with high-quality results, then add diverse chapter results
+          const highQuality = semanticResults.filter(r => r.similarity >= PRIMARY_THRESHOLD);
+          const diverseResults = [...highQuality];
+          
+          // Add best result from each chapter not already represented
+          for (const [chapter, result] of chapterBest) {
+            if (!diverseResults.some(r => r.code.substring(0, 2) === chapter)) {
+              diverseResults.push(result);
+            }
+          }
+          
+          // Sort by similarity (best first)
+          diverseResults.sort((a, b) => b.similarity - a.similarity);
+          
+          console.log(`[V10] Similarity filtering: ${highQuality.length} high-quality (>=${PRIMARY_THRESHOLD}), ${chapterBest.size} chapters represented`);
+          
+          if (diverseResults.length > 0) {
+            // Convert semantic results to the format we need
+            const codes = diverseResults.map(r => r.code);
+            allResults = await prisma.htsCode.findMany({
+              where: { code: { in: codes } },
+            });
+            
+            // Sort by similarity score from semantic search
+            const similarityMap = new Map(diverseResults.map(r => [r.code, r.similarity]));
+            allResults.sort((a, b) => 
+              (similarityMap.get(b.code) || 0) - (similarityMap.get(a.code) || 0)
+            );
+            
+            const bestSimilarity = diverseResults.length > 0 ? diverseResults[0].similarity : 0;
+            console.log(`[V10] Semantic search found ${allResults.length} candidates (${diverseResults.length} diverse from ${semanticResults.length} total), best similarity: ${bestSimilarity.toFixed(2)}`);
+            
+            // If best semantic result has low similarity, also run keyword fallback to supplement
+            // This ensures we don't miss good matches when embeddings aren't perfect
+            if (bestSimilarity >= PRIMARY_THRESHOLD) {
+              // High quality semantic results - use only these
+              usedSemanticSearch = true;
+            } else {
+              // Low quality - keep semantic results but also run keyword fallback
+              console.log(`[V10] Best semantic similarity (${bestSimilarity.toFixed(2)}) below threshold (${PRIMARY_THRESHOLD}), supplementing with keyword search`);
+              usedSemanticSearch = false; // This will trigger keyword fallback below
+            }
+          } else {
+            console.log(`[V10] All semantic results below ${ALTERNATIVE_THRESHOLD} threshold, using keyword fallback`);
+          }
+        }
+      } else {
+        console.log(`[V10] Embeddings not ready (${stats.coverage}), using keyword search`);
+      }
+    } catch (err) {
+      console.log('[V10] Semantic search unavailable, falling back to keywords:', err);
+    }
+  }
+  
+  // Fallback to keyword search if semantic search didn't work OR had low-quality results
+  if (!usedSemanticSearch) {
+    console.log('[V10] Using KEYWORD SEARCH');
+    
+    // Priority 0: If heading classifier predicted headings, search those first
+    if (constrainedHeadings.length > 0 && allResults.length === 0) {
+      const headingResults = await prisma.htsCode.findMany({
+        where: {
+          heading: { in: constrainedHeadings },
+          level: { in: ['statistical', 'tariff_line'] },
+        },
+        take: 80,
+        orderBy: { code: 'asc' },
+      });
+      allResults = [...allResults, ...headingResults];
+      console.log(`[V10] Found ${headingResults.length} codes in predicted headings ${constrainedHeadings.join(', ')}`);
+    }
+    
+    // Priority 1: Search in product-type-specific headings with material filter
+    if (productTypeHints.headings.length > 0 && materialChapters.length > 0) {
+      const relevantHeadings = productTypeHints.headings.filter(h => 
+        materialChapters.includes(h.slice(0, 2))
+      );
+      
+      if (relevantHeadings.length > 0) {
+        const headingResults = await prisma.htsCode.findMany({
+          where: {
+            AND: [
+              { heading: { in: relevantHeadings } },
+              { level: { in: ['statistical', 'tariff_line'] } },
+            ],
+          },
+          take: 50,
+          orderBy: { code: 'asc' },
+        });
+        allResults = [...allResults, ...headingResults];
+        console.log(`[V10] Found ${headingResults.length} codes in specific headings`);
+      }
+    }
+    
+    // Priority 2: Search in material chapter with expanded keywords
+    // Also search for common product terms even without material detection
+    const searchTermsForKeyword = expandedTerms.length > 0 ? expandedTerms : searchTerms;
+    if (allResults.length < 50) {
+      // Search in relevant chapters (material-based if available, or common textile/bedding chapters)
+      const chaptersToSearch = materialChapters.length > 0 
+        ? materialChapters 
+        : searchTerms.some(t => ['sheet', 'bedding', 'bed', 'linen', 'textile', 'fabric'].includes(t.toLowerCase()))
+          ? ['63', '94'] // Textiles and bedding chapters
+          : [];
+      
+      if (chaptersToSearch.length > 0 || materialChapters.length === 0) {
+        const keywordResults = await prisma.htsCode.findMany({
+          where: {
+            AND: [
+              ...(chaptersToSearch.length > 0 ? [{ chapter: { in: chaptersToSearch } }] : []),
+              { level: { in: ['statistical', 'tariff_line'] } },
+              { 
+                OR: [
+                  { keywords: { hasSome: searchTermsForKeyword } },
+                  ...searchTermsForKeyword.slice(0, 5).map(term => ({
+                    description: { contains: term, mode: 'insensitive' as const },
+                  })),
+                ],
+              },
+            ],
+          },
+          take: 50,
+          orderBy: { code: 'asc' },
+        });
+      
+        const existingCodes = new Set(allResults.map(r => r.code));
+        const newResults = keywordResults.filter(r => !existingCodes.has(r.code));
+        allResults = [...allResults, ...newResults];
+        console.log(`[V10] Found ${newResults.length} codes via keyword search${chaptersToSearch.length > 0 ? ` in chapters ${chaptersToSearch.join(', ')}` : ''}`);
+      }
+    }
+    
+    // Priority 3: Broader search if still few results
+    if (allResults.length < 20) {
+      const broadResults = await prisma.htsCode.findMany({
+        where: {
+          AND: [
+            { level: { in: ['statistical', 'tariff_line'] } },
+            { 
+              OR: [
+                { keywords: { hasSome: searchTerms } },
+                ...searchTerms.slice(0, 3).map(term => ({
+                  description: { contains: term, mode: 'insensitive' as const },
+                })),
+              ],
+            },
+          ],
+        },
+        take: 50,
+        orderBy: { code: 'asc' },
+      });
+      
+      const existingCodes = new Set(allResults.map(r => r.code));
+      const newResults = broadResults.filter(r => !existingCodes.has(r.code));
+      allResults = [...allResults, ...newResults];
+      console.log(`[V10] Found ${newResults.length} codes via broad search`);
+    }
+  }
+  
+  searchTime = Date.now() - searchStart;
+  console.log(`[V10] Search found ${allResults.length} candidates in ${searchTime}ms`);
+  
+  if (allResults.length === 0) {
+    return {
+      success: false,
+      timing: { total: Date.now() - startTime, search: searchTime, scoring: 0, tariff: 0 },
+      primary: null,
+      alternatives: [],
+      showMore: 0,
+      detectedMaterial,
+      detectedChapters: materialChapters,
+      searchTerms,
+    };
+  }
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PHASE 3: SCORE CANDIDATES
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  const scoringStart = Date.now();
+  
+  // Get parent descriptions for hierarchy coherence scoring
+  const parentCodes = [...new Set(allResults.map(r => r.parentCode).filter(Boolean) as string[])];
+  const parentMap = new Map<string, string>();
+  
+  if (parentCodes.length > 0) {
+    const parents = await prisma.htsCode.findMany({
+      where: { code: { in: parentCodes } },
+      select: { code: true, description: true },
+    });
+    for (const p of parents) {
+      parentMap.set(p.code, p.description);
+    }
+  }
+  
+  // Also get heading descriptions (4-digit) for proper hierarchy matching
+  // This is critical for differentiating 6105 (shirts) from 6109 (t-shirts)
+  const headingCodes = [...new Set(allResults.map(r => r.heading).filter(Boolean) as string[])];
+  const headingMap = new Map<string, string>();
+  
+  if (headingCodes.length > 0) {
+    const headings = await prisma.htsCode.findMany({
+      where: { code: { in: headingCodes } },
+      select: { code: true, description: true },
+    });
+    for (const h of headings) {
+      headingMap.set(h.code, h.description);
+    }
+  }
+  
+  // Get subheading descriptions (6-digit) for material verification
+  // This is CRITICAL: material specifications like "Of man-made fibers" often appear at the subheading level
+  // e.g., 6205.30 = "Of man-made fibers" vs 6205.20 = "Of cotton"
+  const subheadingCodes = [...new Set(allResults.map(r => r.code.slice(0, 6)).filter(sh => sh.length === 6))];
+  const subheadingMap = new Map<string, string>();
+  
+  if (subheadingCodes.length > 0) {
+    const subheadings = await prisma.htsCode.findMany({
+      where: { code: { in: subheadingCodes } },
+      select: { code: true, description: true },
+    });
+    for (const sh of subheadings) {
+      subheadingMap.set(sh.code, sh.description);
+    }
+    console.log(`[V10] Loaded ${subheadings.length} subheading descriptions for material verification`);
+  }
+  
+  // Score each candidate
+  const candidates: HtsCandidate[] = [];
+  
+  for (const result of allResults) {
+    const isOther = isOtherCode(result.description);
+    const isSpecific = isSpecificCarveOut(result.description);
+    
+    // Validate "Other" codes
+    let otherValidation: OtherValidation | undefined;
+    if (isOther && result.parentCode) {
+      otherValidation = await validateOtherSelection(searchTerms, result.code, result.parentCode);
+    }
+    
+    // Get subheading code (first 6 digits)
+    const subheadingCode = result.code.slice(0, 6);
+    
+    const factors = calculateScore(description.toLowerCase(), searchTerms, detectedMaterial, productTypeHints, {
+      code: result.code,
+      description: result.description,
+      keywords: result.keywords,
+      chapter: result.chapter,
+      heading: result.heading,
+      parentDescription: result.parentCode ? parentMap.get(result.parentCode) : null,
+      headingDescription: result.heading ? headingMap.get(result.heading) : null,
+      subheadingDescription: subheadingMap.get(subheadingCode) || null,
+      parentGroupings: result.parentGroupings,
+      isOtherCode: isOther,
+      isSpecificCarveOut: isSpecific,
+      otherValidation,
+    });
+    
+    candidates.push({
+      code: result.code,
+      codeFormatted: result.codeFormatted,
+      level: result.level,
+      description: result.description,
+      generalRate: result.generalRate,
+      specialRates: result.specialRates,
+      keywords: result.keywords,
+      parentGroupings: result.parentGroupings,
+      chapter: result.chapter,
+      parentCode: result.parentCode,
+      isOtherCode: isOther,
+      isSpecificCarveOut: isSpecific,
+      fullDescription: '', // Will be populated for top candidates
+      parentDescription: result.parentCode ? parentMap.get(result.parentCode) || null : null,
+      score: factors.total,
+      factors,
+      otherValidation,
+    });
+  }
+  
+  // Sort by score descending
+  candidates.sort((a, b) => b.score - a.score);
+  
+  // Deduplicate by 8-digit code (keep highest scoring variant)
+  const seen8Digit = new Set<string>();
+  const uniqueCandidates = candidates.filter(c => {
+    const code8 = c.code.slice(0, 8);
+    if (seen8Digit.has(code8)) return false;
+    seen8Digit.add(code8);
+    return true;
+  });
+  
+  scoringTime = Date.now() - scoringStart;
+  console.log(`[V10] Scored ${candidates.length} candidates in ${scoringTime}ms`);
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PHASE 3.5: LLM RERANKER (Conditional - only when confidence is low)
+  // 
+  // This is the KEY INTELLIGENCE: When heuristic scoring can't distinguish between
+  // candidates (e.g., "indoor planter" → household vs hotel/restaurant), we use
+  // an LLM to reason about the correct classification.
+  // 
+  // Only triggered when:
+  // 1. Top candidate confidence < 60%
+  // 2. There are alternatives in different chapters/headings (ambiguity)
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  let rerankerResult: RerankerResult | null = null;
+  const topCandidate = uniqueCandidates[0];
+  const RERANK_THRESHOLD = 60;
+  
+  // Check if we should trigger reranking
+  // Trigger on:
+  // 1. Low confidence (< 60%)
+  // 2. Close margin between top candidates (ambiguity)
+  // 3. Scattered chapters in results (suggests retrieval confusion)
+  // 4. Always verify with LLM for better accuracy
+  
+  const secondCandidate = uniqueCandidates[1];
+  const hasCloseMargin = secondCandidate && (topCandidate.score - secondCandidate.score) < 15;
+  
+  // Detect scattered chapters - if top 5 results are spread across many chapters,
+  // it suggests the retrieval is confused (e.g., "sheet" matching both bed sheets and plastic sheets)
+  const top5Chapters = new Set(uniqueCandidates.slice(0, 5).map(c => c.chapter));
+  const hasScatteredChapters = top5Chapters.size >= 3;
+  
+  // Detect if alternatives look unrelated to the primary
+  // (e.g., primary is textiles but alternatives are raw materials)
+  const primaryChapter = topCandidate?.chapter;
+  const altChapters = uniqueCandidates.slice(1, 6).map(c => c.chapter);
+  const unrelatedAlts = altChapters.filter(ch => {
+    // Check if chapters are in completely different HTS sections
+    const primarySection = Math.floor(parseInt(primaryChapter || '0') / 10);
+    const altSection = Math.floor(parseInt(ch || '0') / 10);
+    return Math.abs(primarySection - altSection) > 3; // More than 3 sections apart
+  });
+  const hasUnrelatedAlternatives = unrelatedAlts.length >= 2;
+  
+  // Skip reranking when heading classifier has high confidence (>80%)
+  // In this case, we already know the heading is correct — the reranker can't help
+  // and would just add latency. Only rerank for ambiguous cases.
+  const headingIsHighConfidence = headingResult.headingConfidence >= 80;
+  
+  // Always rerank if confidence is below threshold OR there's any ambiguity signal
+  // BUT skip if heading classifier already gave us high confidence
+  const shouldRerank = topCandidate && !headingIsHighConfidence && (
+    topCandidate.score < RERANK_THRESHOLD ||
+    hasCloseMargin ||
+    hasScatteredChapters ||
+    hasUnrelatedAlternatives
+  );
+  
+  if (headingIsHighConfidence && topCandidate) {
+    console.log(`[V10] Skipping LLM reranker — heading confidence ${headingResult.headingConfidence}% >= 80% threshold`);
+  }
+  
+  if (shouldRerank) {
+    console.log(`[V10] Reranking triggered: confidence=${topCandidate.score}%, closeMargin=${hasCloseMargin}, scatteredChapters=${hasScatteredChapters}, unrelatedAlts=${hasUnrelatedAlternatives}`);
+    const rerankerStart = Date.now();
+    
+    // Prepare candidates for reranker
+    const rerankerCandidates: RerankerCandidate[] = await Promise.all(
+      uniqueCandidates.slice(0, 15).map(async (c) => {
+        // Build full description if not already done
+        const fullDesc = c.fullDescription || (await buildFullDescription(c.code)).full;
+        const chapterDesc = CHAPTER_DESCRIPTIONS[c.chapter] || `Chapter ${c.chapter}`;
+        
+        return {
+          code: c.code,
+          codeFormatted: c.codeFormatted,
+          description: c.description,
+          fullDescription: fullDesc,
+          chapter: c.chapter,
+          chapterDescription: chapterDesc,
+          confidence: c.score,
+          parentDescription: c.parentDescription || undefined,
+          material: detectedMaterial || undefined,
+        };
+      })
+    );
+    
+    try {
+      rerankerResult = await conditionalRerank(
+        description,
+        rerankerCandidates,
+        topCandidate.score,
+        {
+          threshold: RERANK_THRESHOLD,
+          detectedMaterial,
+          forceRerank: true, // We've already checked the threshold
+        }
+      );
+      
+      // If reranker succeeded, reorder candidates
+      if (rerankerResult?.success && rerankerResult.bestMatch) {
+        const bestCode = rerankerResult.bestMatch.code;
+        const bestIndex = uniqueCandidates.findIndex(c => c.code === bestCode);
+        
+        if (bestIndex > 0) {
+          // Move best match to front and update its score
+          const [best] = uniqueCandidates.splice(bestIndex, 1);
+          best.score = rerankerResult.bestMatch.confidence;
+          best.factors.total = rerankerResult.bestMatch.confidence;
+          uniqueCandidates.unshift(best);
+          
+          console.log(`[V10] Reranker moved ${best.codeFormatted} to #1 (was #${bestIndex + 1})`);
+        } else if (bestIndex === 0) {
+          // Already first, update confidence
+          uniqueCandidates[0].score = rerankerResult.bestMatch.confidence;
+          uniqueCandidates[0].factors.total = rerankerResult.bestMatch.confidence;
+        } else if (bestIndex === -1 && bestCode) {
+          // LLM suggested a code that's NOT in our candidates!
+          // This means the search missed the right chapter - trigger LLM-guided classification
+          // Pass the suggested code so we search the right heading directly
+          console.log(`[V10] LLM suggested code ${bestCode} not in candidates - triggering LLM-guided search`);
+          
+          const guidedStart = Date.now();
+          const guidedResult = await llmGuidedClassification(description, detectedMaterial, bestCode);
+          
+          if (guidedResult.success && guidedResult.bestMatch) {
+            console.log(`[V10] LLM-guided found: ${guidedResult.bestMatch.code} (${guidedResult.bestMatch.confidence}%)`);
+            
+            const guidedCandidate = guidedResult.candidates.find(c => c.code === guidedResult.bestMatch!.code);
+            if (guidedCandidate) {
+              // Insert the guided result at the top
+              uniqueCandidates.unshift({
+                code: guidedCandidate.code,
+                codeFormatted: guidedCandidate.codeFormatted,
+                description: guidedCandidate.description,
+                fullDescription: guidedCandidate.fullDescription,
+                chapter: guidedCandidate.chapter,
+                heading: guidedCandidate.code.slice(0, 4),
+                score: guidedResult.bestMatch.confidence,
+                similarity: 0.9,
+                factors: {
+                  keywordMatch: 0,
+                  materialMatch: 0,
+                  specificity: 0,
+                  hierarchyCoherence: 0,
+                  penalties: 0,
+                  total: guidedResult.bestMatch.confidence,
+                },
+                isOther: false,
+              });
+              
+              rerankerResult = {
+                ...rerankerResult,
+                bestMatch: guidedResult.bestMatch,
+              };
+            }
+          }
+          
+          console.log(`[V10] LLM-guided complete in ${Date.now() - guidedStart}ms`);
+        }
+      }
+      
+      const rerankerTime = Date.now() - rerankerStart;
+      console.log(`[V10] LLM reranker complete in ${rerankerTime}ms`);
+      
+      // If reranker confidence is still very low, try LLM-guided classification
+      const rerankedConfidence = rerankerResult?.bestMatch?.confidence || 0;
+      if (rerankedConfidence < 30 && rerankerResult?.success) {
+        console.log(`[V10] Reranker confidence still low (${rerankedConfidence}%), trying LLM-guided classification`);
+        
+        const guidedStart = Date.now();
+        const guidedResult = await llmGuidedClassification(description, detectedMaterial);
+        
+        if (guidedResult.success && guidedResult.bestMatch && guidedResult.bestMatch.confidence > rerankedConfidence) {
+          console.log(`[V10] LLM-guided found better match: ${guidedResult.bestMatch.code} (${guidedResult.bestMatch.confidence}%)`);
+          
+          // Replace candidates with guided results
+          const guidedCandidate = guidedResult.candidates.find(c => c.code === guidedResult.bestMatch!.code);
+          if (guidedCandidate) {
+            // Insert the guided result at the top
+            const existingIndex = uniqueCandidates.findIndex(c => c.code === guidedCandidate.code);
+            if (existingIndex >= 0) {
+              uniqueCandidates.splice(existingIndex, 1);
+            }
+            
+            // Create a proper scored candidate from the guided result
+            uniqueCandidates.unshift({
+              code: guidedCandidate.code,
+              codeFormatted: guidedCandidate.codeFormatted,
+              description: guidedCandidate.description,
+              fullDescription: guidedCandidate.fullDescription,
+              chapter: guidedCandidate.chapter,
+              heading: guidedCandidate.code.slice(0, 4),
+              score: guidedResult.bestMatch.confidence,
+              similarity: 0.9,
+              factors: {
+                keywordMatch: 0,
+                materialMatch: 0,
+                specificity: 0,
+                hierarchyCoherence: 0,
+                penalties: 0,
+                total: guidedResult.bestMatch.confidence,
+              },
+              isOther: false,
+            });
+            
+            // Update reranker result to reflect guided classification
+            rerankerResult = {
+              ...rerankerResult,
+              bestMatch: guidedResult.bestMatch,
+            };
+          }
+        }
+        
+        console.log(`[V10] LLM-guided complete in ${Date.now() - guidedStart}ms`);
+      }
+      
+    } catch (err) {
+      console.error('[V10] LLM reranker error (continuing with heuristic results):', err);
+    }
+  }
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PHASE 3.6: FILTER UNRELATED ALTERNATIVES
+  // 
+  // Remove alternatives that are clearly unrelated to the primary classification.
+  // For example, if primary is "bed sheets" (Chapter 63), filter out "plastic sheets" (Chapter 39).
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  const primaryResult = uniqueCandidates[0];
+  if (primaryResult) {
+    // HTS Sections mapping (simplified)
+    // Sections 1-4: Animals, Vegetables, Fats, Food (Ch 1-24)
+    // Section 5-6: Mineral, Chemical (Ch 25-38)
+    // Section 7: Plastics, Rubber (Ch 39-40)
+    // Section 8: Leather, Furs (Ch 41-43)
+    // Section 9: Wood (Ch 44-46)
+    // Section 10: Pulp, Paper (Ch 47-49)
+    // Section 11: Textiles (Ch 50-63)
+    // Section 12: Footwear, Headgear (Ch 64-67)
+    // Section 13: Stone, Ceramic, Glass (Ch 68-70)
+    // Section 14: Precious metals (Ch 71)
+    // Section 15: Base metals (Ch 72-83)
+    // Section 16: Machinery (Ch 84-85)
+    // Section 17-21: Transport, Instruments, Arms, Misc, Art (Ch 86-97)
+    
+    const getSection = (chapter: string): number => {
+      const ch = parseInt(chapter);
+      if (ch <= 5) return 1;
+      if (ch <= 14) return 2;
+      if (ch <= 15) return 3;
+      if (ch <= 24) return 4;
+      if (ch <= 27) return 5;
+      if (ch <= 38) return 6;
+      if (ch <= 40) return 7;  // Plastics, Rubber
+      if (ch <= 43) return 8;
+      if (ch <= 46) return 9;
+      if (ch <= 49) return 10;
+      if (ch <= 63) return 11; // Textiles
+      if (ch <= 67) return 12;
+      if (ch <= 70) return 13;
+      if (ch <= 71) return 14;
+      if (ch <= 83) return 15;
+      if (ch <= 85) return 16;
+      if (ch <= 89) return 17;
+      if (ch <= 92) return 18;
+      if (ch <= 93) return 19;
+      if (ch <= 96) return 20; // Misc manufactured (furniture, bedding, toys, etc.)
+      return 21;
+    };
+    
+    const primarySection = getSection(primaryResult.chapter);
+    
+    // Filter alternatives to keep only those in same or adjacent HTS sections
+    // This removes "vocabulary confusion" matches (e.g., "bed sheet" vs "plastic sheet")
+    const filteredCandidates = uniqueCandidates.filter((c, idx) => {
+      if (idx === 0) return true; // Always keep primary
+      
+      const altSection = getSection(c.chapter);
+      
+      // Keep if in same or adjacent section
+      if (Math.abs(primarySection - altSection) <= 1) return true;
+      
+      // Keep if same chapter as primary
+      if (c.chapter === primaryResult.chapter) return true;
+      
+      // Filter out unrelated sections regardless of score
+      // High score from keyword match doesn't mean the product is relevant
+      console.log(`[V10] Filtering unrelated alternative: ${c.codeFormatted} (Ch ${c.chapter}, Section ${altSection}) - primary is Section ${primarySection}`);
+      return false;
+    });
+    
+    // Replace candidates with filtered list, but keep at least 5 alternatives
+    if (filteredCandidates.length >= 6) {
+      uniqueCandidates.length = 0;
+      uniqueCandidates.push(...filteredCandidates);
+    }
+  }
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PHASE 4: BUILD RESULTS
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  const topCandidates = uniqueCandidates.slice(0, 15);
+  
+  // Build full descriptions for top candidates
+  for (const candidate of topCandidates) {
+    const fullDesc = await buildFullDescription(candidate.code);
+    candidate.fullDescription = fullDesc.full;
+  }
+  
+  // Primary result
+  const primary = topCandidates[0];
+  
+  if (!primary) {
+    return {
+      success: false,
+      timing: { total: Date.now() - startTime, search: searchTime, scoring: scoringTime, tariff: 0 },
+      primary: null,
+      alternatives: [],
+      showMore: 0,
+      detectedMaterial,
+      detectedChapters: materialChapters,
+      searchTerms,
+    };
+  }
+  
+  // Get tariff info for primary
+  const tariffStart = Date.now();
+  let dutyInfo: {
+    baseMfn: string;
+    additional: string;
+    effective: string;
+    special?: string;
+    breakdown?: Array<{ program: string; rate: number; description?: string }>;
+  } | null = null;
+  
+  if (origin) {
+    try {
+      // IMPORTANT: Statistical codes (10-digit) often don't have their own generalRate
+      // They inherit from their parent tariff_line (8-digit) code
+      let effectiveGeneralRate = primary.generalRate;
+      let effectiveSpecialRates = primary.specialRates;
+      
+      if (!effectiveGeneralRate && primary.parentCode) {
+        // Look up parent code to inherit rate
+        const parentCode = await prisma.htsCode.findFirst({
+          where: { code: primary.parentCode },
+          select: { generalRate: true, specialRates: true },
+        });
+        
+        if (parentCode?.generalRate) {
+          effectiveGeneralRate = parentCode.generalRate;
+          effectiveSpecialRates = parentCode.specialRates || effectiveSpecialRates;
+          console.log(`[V10] Inherited rate from parent ${primary.parentCode}: ${effectiveGeneralRate}`);
+        }
+      }
+      
+      const tariff = await getEffectiveTariff(origin, primary.code, {
+        baseMfnRate: effectiveGeneralRate ? parseFloat(effectiveGeneralRate) || 0 : 0,
+      });
+      
+      // Build detailed additional duties breakdown
+      const additionalParts: string[] = [];
+      
+      // IEEPA Breakdown (baseline, fentanyl, reciprocal)
+      if (tariff.ieepaBreakdown.baseline > 0) {
+        additionalParts.push(`+${tariff.ieepaBreakdown.baseline}% (IEEPA Baseline)`);
+      }
+      if (tariff.ieepaBreakdown.fentanyl > 0) {
+        additionalParts.push(`+${tariff.ieepaBreakdown.fentanyl}% (Fentanyl)`);
+      }
+      if (tariff.ieepaBreakdown.reciprocal > 0) {
+        additionalParts.push(`+${tariff.ieepaBreakdown.reciprocal}% (Reciprocal)`);
+      }
+      
+      // Section 301 (China)
+      if (tariff.section301Rate > 0) {
+        const listInfo = tariff.section301Lists.length > 0 
+          ? ` (${tariff.section301Lists.join(', ')})`
+          : '';
+        additionalParts.push(`+${tariff.section301Rate}% (Section 301${listInfo})`);
+      }
+      
+      // Section 232 (Steel/Aluminum)
+      if (tariff.section232Rate > 0) {
+        additionalParts.push(`+${tariff.section232Rate}% (Section 232)`);
+      }
+      
+      // Build structured breakdown for UI display
+      const breakdown: Array<{ program: string; rate: number; description?: string }> = [];
+      
+      if (tariff.ieepaBreakdown.baseline > 0) {
+        breakdown.push({ program: 'IEEPA Baseline', rate: tariff.ieepaBreakdown.baseline, description: 'April 2025 universal tariff' });
+      }
+      if (tariff.ieepaBreakdown.fentanyl > 0) {
+        breakdown.push({ program: 'Fentanyl Tariff', rate: tariff.ieepaBreakdown.fentanyl, description: 'IEEPA fentanyl emergency tariff' });
+      }
+      if (tariff.ieepaBreakdown.reciprocal > 0) {
+        breakdown.push({ program: 'Reciprocal Tariff', rate: tariff.ieepaBreakdown.reciprocal, description: 'Country-specific reciprocal tariff' });
+      }
+      if (tariff.section301Rate > 0) {
+        const listInfo = tariff.section301Lists.length > 0 ? tariff.section301Lists.join(', ') : '';
+        breakdown.push({ program: 'Section 301', rate: tariff.section301Rate, description: listInfo ? `China ${listInfo}` : 'China trade action' });
+      }
+      if (tariff.section232Rate > 0) {
+        breakdown.push({ program: 'Section 232', rate: tariff.section232Rate, description: 'Steel/Aluminum national security tariff' });
+      }
+      
+      dutyInfo = {
+        baseMfn: effectiveGeneralRate || 'N/A',
+        additional: additionalParts.length > 0 ? additionalParts.join(', ') : 'None',
+        effective: `${tariff.effectiveRate.toFixed(1)}%`,
+        special: effectiveSpecialRates || undefined,
+        breakdown: breakdown.length > 0 ? breakdown : undefined,
+      };
+    } catch (err) {
+      console.error('[V10] Tariff lookup error:', err);
+    }
+  }
+  
+  tariffTime = Date.now() - tariffStart;
+  
+  // Build full description path for primary
+  const primaryDesc = await buildFullDescription(primary.code);
+  
+  // Build alternatives with DIVERSITY: prefer candidates from different chapters/headings
+  // This ensures users see multiple interpretations, not just variations of the same code
+  const buildDiverseAlternatives = (): HtsCandidate[] => {
+    const result: HtsCandidate[] = [];
+    const usedChapters = new Set<string>([primary.chapter]);
+    const usedHeadings = new Set<string>([primary.code.substring(0, 4)]);
+    
+    // First pass: prioritize alternatives from DIFFERENT chapters
+    for (const c of topCandidates.slice(1)) {
+      if (result.length >= 10) break;
+      if (!usedChapters.has(c.chapter)) {
+        usedChapters.add(c.chapter);
+        result.push(c);
+      }
+    }
+    
+    // Second pass: add alternatives from different HEADINGS within same chapters
+    for (const c of topCandidates.slice(1)) {
+      if (result.length >= 10) break;
+      const heading = c.code.substring(0, 4);
+      if (!usedHeadings.has(heading) && !result.includes(c)) {
+        usedHeadings.add(heading);
+        result.push(c);
+      }
+    }
+    
+    // Third pass: fill remaining slots with highest-scoring candidates
+    for (const c of topCandidates.slice(1)) {
+      if (result.length >= 10) break;
+      if (!result.includes(c)) {
+        result.push(c);
+      }
+    }
+    
+    // Sort by confidence (score) descending - highest confidence first
+    result.sort((a, b) => b.score - a.score);
+    
+    return result;
+  };
+  
+  const diverseAlternatives = buildDiverseAlternatives();
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // FETCH DUTY RATES FOR TOP 5 ALTERNATIVES
+  // This enables duty comparison in the UI
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  const alternativeDuties = new Map<string, Alternative['duty']>();
+  
+  if (origin) {
+    // Fetch duty rates for top 5 alternatives (parallel for speed)
+    const topAltsForDuty = diverseAlternatives.slice(0, 5);
+    
+    try {
+      const dutyPromises = topAltsForDuty.map(async (alt) => {
+        try {
+          // Get the general rate for this alternative
+          let effectiveGeneralRate = alt.generalRate;
+          
+          if (!effectiveGeneralRate && alt.parentCode) {
+            const parentCode = await prisma.htsCode.findFirst({
+              where: { code: alt.parentCode },
+              select: { generalRate: true },
+            });
+            effectiveGeneralRate = parentCode?.generalRate || null;
+          }
+          
+          const tariff = await getEffectiveTariff(origin, alt.code, {
+            baseMfnRate: effectiveGeneralRate ? parseFloat(effectiveGeneralRate) || 0 : 0,
+          });
+          
+          // Build breakdown for detailed display
+          const breakdown: Array<{ program: string; rate: number; description?: string }> = [];
+          
+          if (tariff.ieepaBreakdown.baseline > 0) {
+            breakdown.push({ program: 'IEEPA Baseline', rate: tariff.ieepaBreakdown.baseline });
+          }
+          if (tariff.ieepaBreakdown.fentanyl > 0) {
+            breakdown.push({ program: 'Fentanyl Tariff', rate: tariff.ieepaBreakdown.fentanyl });
+          }
+          if (tariff.ieepaBreakdown.reciprocal > 0) {
+            breakdown.push({ program: 'Reciprocal Tariff', rate: tariff.ieepaBreakdown.reciprocal });
+          }
+          if (tariff.section301Rate > 0) {
+            breakdown.push({ program: 'Section 301', rate: tariff.section301Rate });
+          }
+          if (tariff.section232Rate > 0) {
+            breakdown.push({ program: 'Section 232', rate: tariff.section232Rate });
+          }
+          
+          return {
+            code: alt.code,
+            duty: {
+              baseMfn: effectiveGeneralRate || 'N/A',
+              effective: `${tariff.effectiveRate.toFixed(1)}%`,
+              effectiveNumeric: tariff.effectiveRate,
+              breakdown: breakdown.length > 0 ? breakdown : undefined,
+            },
+          };
+        } catch (err) {
+          console.log(`[V10] Failed to get duty for alternative ${alt.code}:`, err);
+          return null;
+        }
+      });
+      
+      const results = await Promise.all(dutyPromises);
+      for (const r of results) {
+        if (r) {
+          alternativeDuties.set(r.code, r.duty);
+        }
+      }
+      
+      console.log(`[V10] Fetched duty rates for ${alternativeDuties.size} alternatives`);
+    } catch (err) {
+      console.error('[V10] Error fetching alternative duties:', err);
+    }
+  }
+  
+  // Map to Alternative format with duty info
+  const alternatives: Alternative[] = diverseAlternatives.map((c, i) => {
+    // Generate material note if different chapter
+    let materialNote: string | undefined;
+    if (c.chapter !== primary.chapter) {
+      const chapterMaterial = Object.entries(MATERIAL_CHAPTERS)
+        .find(([_, chapters]) => chapters.includes(c.chapter))?.[0];
+      if (chapterMaterial) {
+        materialNote = `If your product is ${chapterMaterial}`;
+      }
+    }
+    
+    // Get heading description from the map we already built
+    const heading = c.code.substring(0, 4);
+    const headingDesc = headingMap.get(heading) || '';
+    
+    return {
+      rank: i + 2,
+      htsCode: c.code,
+      htsCodeFormatted: c.codeFormatted,
+      confidence: c.score,
+      description: c.description,
+      fullDescription: c.fullDescription,
+      chapter: c.chapter,
+      chapterDescription: CHAPTER_DESCRIPTIONS[c.chapter] || `Chapter ${c.chapter}`,
+      headingDescription: headingDesc,
+      materialNote,
+      duty: alternativeDuties.get(c.code),
+    };
+  });
+  
+  // Count remaining candidates
+  const showMore = Math.max(0, uniqueCandidates.length - 11);
+  
+  const totalTime = Date.now() - startTime;
+  console.log(`[V10] Classification complete in ${totalTime}ms (search: ${searchTime}ms, scoring: ${scoringTime}ms, tariff: ${tariffTime}ms)`);
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // LOW CONFIDENCE HANDLING: Ask for clarification when we're not confident
+  // This is better than returning garbage results
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  const CONFIDENCE_THRESHOLD = 40; // Below this, consider asking for clarification
+  const CONFIDENCE_FLOOR = 15;     // Minimum displayable confidence (prevents 0%)
+  
+  // Apply confidence floor to prevent displaying 0% or very low scores
+  // This acknowledges uncertainty without showing absurdly low numbers
+  const displayConfidence = Math.max(CONFIDENCE_FLOOR, primary.score);
+  
+  let needsClarification: ClassifyV10Result['needsClarification'] = undefined;
+  
+  // Determine what kind of clarification is most useful
+  const hasLowConfidence = primary.score < CONFIDENCE_THRESHOLD;
+  const hasDiverseAlternatives = alternatives.some(a => a.chapter !== primary.chapter);
+  const noMaterialDetected = !detectedMaterial;
+  
+  if (hasLowConfidence) {
+    console.log(`[V10] Low confidence (${primary.score}%) - determining best clarification approach`);
+    
+    // Priority 1: If no material detected and alternatives span multiple material-chapters
+    if (noMaterialDetected && hasDiverseAlternatives) {
+      // Find which material-chapters are represented in alternatives
+      const representedMaterials = new Set<string>();
+      for (const alt of alternatives) {
+        const material = Object.entries(MATERIAL_CHAPTERS)
+          .find(([_, chapters]) => chapters.includes(alt.chapter))?.[0];
+        if (material) representedMaterials.add(material);
+      }
+      
+      if (representedMaterials.size > 1) {
+        // Multiple materials possible - ask about material
+        const materialOptions = [
+          { value: 'plastic', label: 'Plastic', hint: 'Chapter 39' },
+          { value: 'ceramic', label: 'Ceramic/Clay', hint: 'Chapter 69' },
+          { value: 'metal', label: 'Metal', hint: 'Chapters 72-83' },
+          { value: 'wood', label: 'Wood', hint: 'Chapter 44' },
+          { value: 'glass', label: 'Glass', hint: 'Chapter 70' },
+        ];
+        
+        needsClarification = {
+          reason: 'material_ambiguous',
+          question: `What material is your product made of?`,
+          options: materialOptions,
+        };
+        console.log(`[V10] Clarification: material ambiguous (${[...representedMaterials].join(', ')})`);
+      }
+    }
+    
+    // Priority 2: If alternatives have different use cases (household vs commercial, etc.)
+    // This handles cases like "indoor planter" which could be household OR hotel
+    if (!needsClarification && hasDiverseAlternatives) {
+      // Check if alternatives suggest different use contexts
+      const primaryDesc = primary.description.toLowerCase();
+      const hasUseAmbiguity = alternatives.some(alt => {
+        const altDesc = alt.description.toLowerCase();
+        // Detect household vs commercial ambiguity
+        const primaryIsHousehold = primaryDesc.includes('household') || primaryDesc.includes('domestic');
+        const primaryIsCommercial = primaryDesc.includes('hotel') || primaryDesc.includes('restaurant') || primaryDesc.includes('commercial');
+        const altIsHousehold = altDesc.includes('household') || altDesc.includes('domestic');
+        const altIsCommercial = altDesc.includes('hotel') || altDesc.includes('restaurant') || altDesc.includes('commercial');
+        return (primaryIsHousehold && altIsCommercial) || (primaryIsCommercial && altIsHousehold);
+      });
+      
+      if (hasUseAmbiguity) {
+        needsClarification = {
+          reason: 'use_ambiguous',
+          question: `What is the intended use of your product?`,
+          options: [
+            { value: 'household', label: 'Household/Residential', hint: 'For home use' },
+            { value: 'commercial', label: 'Commercial/Industrial', hint: 'For hotels, restaurants, businesses' },
+          ],
+        };
+        console.log(`[V10] Clarification: use context ambiguous (household vs commercial)`);
+      }
+    }
+    
+    // Priority 3: Generic low confidence - prompt for more details
+    if (!needsClarification && primary.score < 25) {
+      needsClarification = {
+        reason: 'low_confidence',
+        question: `We need more details to classify this product accurately. What is the primary material?`,
+        options: [
+          { value: 'plastic', label: 'Plastic', hint: 'Chapter 39' },
+          { value: 'ceramic', label: 'Ceramic/Clay', hint: 'Chapter 69' },
+          { value: 'metal', label: 'Metal', hint: 'Chapters 72-83' },
+          { value: 'textile', label: 'Textile/Fabric', hint: 'Chapters 50-63' },
+          { value: 'other', label: 'Other', hint: 'Please specify in description' },
+        ],
+      };
+      console.log(`[V10] Clarification: very low confidence (${primary.score}%)`);
+    }
+  }
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // CONDITIONAL CLASSIFICATION: Detect value/size/weight dependent siblings
+  // This helps users find more specific codes when conditions apply
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  let conditionalClassification: ClassifyV10Result['conditionalClassification'] = undefined;
+  
+  try {
+    const conditionalResult = await detectConditionalSiblings(
+      primary.code,
+      dutyInfo?.baseMfn || null
+    );
+    
+    if (conditionalResult.hasConditions) {
+      console.log(`[V10] Found ${conditionalResult.decisionQuestions.length} decision questions, ${conditionalResult.alternatives.length} alternatives`);
+      conditionalClassification = conditionalResult;
+    }
+  } catch (err) {
+    console.log('[V10] Error detecting conditional siblings:', err);
+  }
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // AI REASONING: Generate human-readable explanation for the classification
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  const aiReasoning = generateAIReasoning(
+    description,
+    primary,
+    primaryDesc.path,
+    detectedMaterial,
+    productTypeHints,
+    searchTerms,
+  );
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // SPLIT CONFIDENCE: heading confidence × code confidence
+  // 
+  // A score of 85 now means "95% sure about heading × 89% sure about suffix"
+  // instead of one opaque blended number. This lets the UI show:
+  // "We're confident this is a T-shirt (Ch 61), but the exact code depends on fiber content."
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  const primaryHeading = primary.code.slice(0, 4);
+  const primaryChapterForConf = primary.code.slice(0, 2);
+  
+  // Heading confidence: from heading classifier if it predicted this heading, otherwise from score
+  const matchedHeadingPrediction = headingResult.predictions.find(p => p.heading === primaryHeading);
+  const headingConf = matchedHeadingPrediction
+    ? matchedHeadingPrediction.headingConfidence
+    : Math.min(90, displayConfidence + 10); // If we found it through search, heading is likely right
+  
+  // Code confidence: how sure we are about the specific statistical suffix
+  // This is the score WITHIN the heading — how well the code matches the product
+  const codeConf = displayConfidence;
+  
+  // Combined: heading × code / 100
+  const combinedConf = Math.round(headingConf * codeConf / 100);
+  
+  // Build heading explanation
+  const headingDesc = CHAPTER_DESCRIPTIONS[primaryChapterForConf] || '';
+  const headingExpl = matchedHeadingPrediction
+    ? `${headingConf}% confident this is heading ${primaryHeading} (${matchedHeadingPrediction.reason})`
+    : `${headingConf}% confident about heading ${primaryHeading} (${headingDesc})`;
+  
+  // Build code explanation  
+  const codeExpl = primary.isOtherCode
+    ? `${codeConf}% confident — falls into "Other" category within this heading`
+    : `${codeConf}% confident about specific code ${primary.codeFormatted}`;
+  
+  return {
+    success: true,
+    timing: {
+      total: totalTime,
+      search: searchTime,
+      scoring: scoringTime,
+      tariff: tariffTime,
+    },
+    primary: {
+      htsCode: primary.code,
+      htsCodeFormatted: primary.codeFormatted,
+      // Use combined confidence (heading × code) for the display confidence
+      confidence: Math.max(CONFIDENCE_FLOOR, combinedConf),
+      path: primaryDesc.path,
+      fullDescription: primaryDesc.full,
+      shortDescription: primary.description,
+      duty: dutyInfo,
+      isOther: primary.isOtherCode,
+      otherExclusions: primary.otherValidation?.excludedSiblings.map(s => s.description),
+      scoringFactors: primary.factors,
+    },
+    alternatives,
+    showMore,
+    detectedMaterial,
+    detectedChapters: materialChapters,
+    searchTerms,
+    aiReasoning,
+    splitConfidence: {
+      heading: headingConf,
+      code: codeConf,
+      combined: combinedConf,
+      headingExplanation: headingExpl,
+      codeExplanation: codeExpl,
+    },
+    headingPrediction: {
+      predictions: headingResult.predictions,
+      method: headingResult.method,
+      constrained: headingResult.shouldConstrain,
+      timing: headingResult.timing,
+    },
+    needsClarification,
+    conditionalClassification,
+    // Include LLM reranker info if it was used
+    llmReranking: rerankerResult?.success ? {
+      used: true,
+      reasoning: rerankerResult.bestMatch?.reasoning || '',
+      previousBest: topCandidate?.codeFormatted,
+      newBest: rerankerResult.bestMatch?.code ? formatHtsCode(rerankerResult.bestMatch.code) : undefined,
+      confidence: rerankerResult.bestMatch?.confidence || 0,
+      timing: rerankerResult.timing,
+    } : undefined,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ON-DEMAND JUSTIFICATION (AI-powered, async)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface JustificationResult {
+  gri1Analysis: string;
+  gri6Analysis: string;
+  carveOutExclusions: string[];
+  confidenceFactors: string[];
+  fullJustification: string;
+}
+
+/**
+ * Generate AI-powered justification for a classification
+ * This is called ON-DEMAND, not in the critical path
+ */
+export async function generateJustification(
+  productDescription: string,
+  htsCode: string,
+  result: ClassifyV10Result
+): Promise<JustificationResult> {
+  // For now, return a deterministic justification
+  // Can be enhanced with AI call later
+  
+  const primary = result.primary;
+  if (!primary) {
+    return {
+      gri1Analysis: 'No classification result available.',
+      gri6Analysis: '',
+      carveOutExclusions: [],
+      confidenceFactors: [],
+      fullJustification: 'Unable to generate justification without classification result.',
+    };
+  }
+  
+  const chapter = primary.htsCode.slice(0, 2);
+  const heading = primary.htsCode.slice(0, 4);
+  
+  // Build GRI 1 analysis
+  const gri1 = `The product "${productDescription}" is classified under Chapter ${chapter} ` +
+    `based on ${result.detectedMaterial ? `its ${result.detectedMaterial} material` : 'its essential character'}. ` +
+    `Heading ${heading} specifically provides for "${primary.path.descriptions[1] || primary.shortDescription}".`;
+  
+  // Build GRI 6 analysis
+  const gri6 = primary.isOther 
+    ? `Within heading ${heading}, the product falls under the "Other" subheading because it does not match any specific carve-out codes.`
+    : `The specific subheading ${primary.htsCodeFormatted} provides for "${primary.shortDescription}".`;
+  
+  // Carve-out exclusions
+  const exclusions = primary.otherExclusions || [];
+  
+  // Confidence factors
+  const factors = [
+    primary.scoringFactors.keywordMatch > 20 ? `Strong keyword match (+${primary.scoringFactors.keywordMatch})` : null,
+    primary.scoringFactors.materialMatch > 0 ? `Material match (${result.detectedMaterial} → Chapter ${chapter})` : null,
+    primary.isOther && primary.otherExclusions?.length ? `"Other" verified via ${primary.otherExclusions.length} exclusions` : null,
+    primary.scoringFactors.hierarchyCoherence > 5 ? `Hierarchy coherence (+${primary.scoringFactors.hierarchyCoherence})` : null,
+  ].filter(Boolean) as string[];
+  
+  const fullJustification = [
+    '## GRI 1 - Terms of Headings',
+    gri1,
+    '',
+    '## GRI 6 - Subheading Classification',
+    gri6,
+    '',
+    exclusions.length > 0 ? '## Specific Carve-Out Exclusions' : '',
+    ...exclusions.map(e => `- ✓ Not "${e}" - product does not match this specific category`),
+    '',
+    '## Confidence Factors',
+    ...factors.map(f => `- ${f}`),
+    '',
+    `**Total Confidence: ${primary.confidence}%**`,
+  ].filter(Boolean).join('\n');
+  
+  return {
+    gri1Analysis: gri1,
+    gri6Analysis: gri6,
+    carveOutExclusions: exclusions,
+    confidenceFactors: factors,
+    fullJustification,
+  };
+}
+

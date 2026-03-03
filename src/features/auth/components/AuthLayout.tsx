@@ -32,7 +32,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ children, title, subtitl
             </Content>
             <div className="fixed bottom-4 text-center">
                 <Text type="secondary" className="text-xs">
-                    © 2026 Sourcify Inc. Secure Enterprise Login.
+                    © 2026 Tarifyx Inc. Secure Enterprise Login.
                 </Text>
             </div>
         </Layout>

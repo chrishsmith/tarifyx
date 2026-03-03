@@ -3,6 +3,20 @@
  */
 
 /**
+ * Formats a raw HTS code string with dots for display.
+ * e.g., "6109100012" → "6109.10.00.12"
+ */
+export function formatHtsCode(code: string): string {
+    const digits = code.replace(/\D/g, '');
+    if (digits.length <= 4) return digits;
+    let formatted = digits.substring(0, 4);
+    if (digits.length > 4) formatted += '.' + digits.substring(4, 6);
+    if (digits.length > 6) formatted += '.' + digits.substring(6, 8);
+    if (digits.length > 8) formatted += '.' + digits.substring(8);
+    return formatted;
+}
+
+/**
  * Generates a human-readable breadcrumb path for an HTS code
  * e.g., "Plastics (Ch 39) > Articles of Plastic (3926) > Other > Other"
  * 

@@ -44,7 +44,7 @@ export const LoginForm: React.FC = () => {
                     return;
                 }
 
-                message.success('Welcome back to Sourcify');
+                message.success('Welcome back to Tarifyx');
                 router.push('/dashboard');
             }
         } catch (err) {

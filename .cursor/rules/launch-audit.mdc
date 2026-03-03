@@ -1,0 +1,120 @@
+---
+description: Launch readiness audit — temporary implementation tracker. Delete after all items complete.
+alwaysApply: true
+---
+
+# Launch Audit — Implementation Tracker
+
+## STATUS: P0-P1 COMPLETE, P2 DONE (14-18), P3 DONE (20-24) — Feb 16, 2026
+
+---
+
+## P0 — Must Fix Before Launch
+
+### 1. Settings page is a 404 — `DONE`
+- Created `src/app/(dashboard)/dashboard/settings/page.tsx`
+- Profile (name, email, member since), Plan & Billing (Free tier + upgrade CTA), Notifications, Security (sign out)
+- "My Profile" dropdown now links to `/dashboard/settings`
+
+### 2. Tariff Alerts API has no real auth — `DONE`
+- Both GET and POST now use `auth.api.getSession()` with proper 401 responses
+- Removed `userId` query param and `'demo-user'` fallback
+
+### 3. TariffMonitoringTab stats are all hardcoded zeros — `DONE`
+- Stats now calculated from actual product data: alert count, avg tariff rate, rate increases/decreases
+
+### 4. Login page says "Welcome back" for signups — `DONE`
+- Reads `?mode=signup` from URL, shows "Create your account" with appropriate subtitle
+
+### 5. Pricing page Free tier CTA links wrong — `DONE`
+- Changed to `/login?mode=signup`
+
+---
+
+## P1 — Should Fix Before Launch
+
+### 6. Landing page indigo color violation — `DONE`
+- Changed to `bg-teal-50`/`text-teal-600`
+
+### 7. "My Profile" dropdown does nothing — `DONE`
+- Now routes to `/dashboard/settings`
+
+### 8. Duty Optimizer tier check disabled — `DONE`
+- Comment updated: "Tier gating intentionally disabled during beta — will enforce in Phase 4"
+
+### 9. TariffTrackerContent hardcoded IEEPA rates — `DONE`
+- Now pulls fentanyl rates from fetched program data instead of hardcoded values
+
+### 10. ProductInputSection pre-filled defaults — `DONE`
+- Removed pre-filled defaults. Fields now show placeholder text only ("5,000" / "1,000")
+
+### 11. Portfolio Analysis tab is placeholder — `ACCEPTABLE FOR LAUNCH`
+- Clear Pro upsell with feature list. Not misleading.
+
+### 12. Alerts tab is placeholder — `ACCEPTABLE FOR LAUNCH`
+- Shows "No Active Alerts" or directs to Monitored tab. Functional placeholder.
+
+### 13. Email notifications "Coming Soon" — `DONE`
+- Changed to "In-App Alerts Active" with note that email is on the roadmap
+
+---
+
+## P2 — Fix Soon After Launch
+
+### 14. Consolidate duplicate `COUNTRY_OPTIONS` (9 copies) — `DONE`
+- Canonical: `src/components/shared/constants.ts` — `COUNTRIES` (67 countries) + `COUNTRY_OPTIONS` alias
+- Replaced in: LandedCostCalculator, TariffTrackerContent, FTAQualificationCalculator, DeniedPartySearch, ADCVDLookup, TariffMonitoringTab, TradeStatsDashboard (7 files)
+- FTARulesLookup kept separate `FTA_COUNTRY_OPTIONS` (has extra `fta` field)
+
+### 15. Consolidate duplicate `getCountryName()` (8 copies) — `DONE`
+- Canonical: `src/components/shared/constants.ts` — `COUNTRY_NAMES` (90+ countries) + `getCountryName()`
+- Replaced in: orchestrator.ts, cost-aggregation.ts, TariffTrackerContent, DashboardOverview, TariffIntelligenceCard, directoryScraper, ClassificationResult, pdfExportService (8 files)
+
+### 16. Consolidate duplicate `formatHtsCode()` (6 copies) — `DONE`
+- Canonical: `src/utils/htsFormatting.ts`
+- Replaced in: SearchHistoryPanel.tsx, OnboardingWizard.tsx (removed local copies)
+- database.ts now re-exports from canonical (preserves 3 existing importers)
+
+### 17. Remove deprecated `/api/classify` endpoint — `DONE`
+- Deleted: `src/app/api/classify/route.ts`, `src/app/api/classify/bulk/route.ts`
+- Deleted: `src/services/classification/engine.ts` (old V2 engine, only used by deleted routes)
+
+### 18. Remove debug console.log statements — `DONE`
+- Removed debug logs from SourcingPreview.tsx. ClassificationV10LayoutB and ProductInputSection use console.info with structured context (intentional analytics logging, kept).
+
+### 19. Improve error messages to be actionable — `NOT STARTED`
+
+---
+
+## P3 — Real-World User Gaps
+
+### 20. Add trade glossary tooltips — `DONE`
+- Created `src/components/shared/GlossaryTerm.tsx` — reusable component with 17 trade term definitions
+- Applied to: ProductInputSection (HTS code label), LandedCostSection (MPF, HMF, USMCA, Section 301), LandedCostCalculator (MFN, MPF, HMF, Section 301, IEEPA, AD/CVD, FTA, Country of Origin), TariffBreakdown (MFN, AD/CVD), ClassificationResult (HTS, MFN, AD/CVD), FTAQualificationCalculator (FTA, RVC, MFN)
+- Dotted underline + hover tooltip with plain-English definition
+
+### 21. Add "What is an HTS code?" explainer — `DONE`
+- GlossaryTerm tooltip on HTS code label in ProductInputSection
+- Definition explains code structure and purpose
+
+### 22. Post-classification "Next Steps" guidance — `DONE`
+- Added 4-card "What to do next" section to ResultsContainer (Save to Portfolio, Screen Suppliers, Detailed Cost Calc, Check FTA Eligibility)
+- Appears between analysis sections and "Start Over" button
+
+### 23. Country of Origin explanation — `DONE`
+- GlossaryTerm tooltip on "Country of Origin" labels in ProductInputSection and LandedCostCalculator
+- Definition: "The country where a product was manufactured or substantially transformed — not where it was shipped from"
+
+### 24. Dashboard empty state guide for new users — `DONE`
+- 4-step welcome guide on DashboardOverview when user has zero products and zero searches
+- Steps: Classify → Calculate → Compliance → Monitor, each linking to the relevant tool
+
+---
+
+## Infrastructure Notes (Not blocking launch, but track)
+
+- Prisma connection pool errors in terminal — needs connection tuning
+- No rate limiting on classification API — add before marketing push
+- No error tracking (Sentry/etc) — add before production
+- Mobile responsiveness untested
+- SEO meta tags needed for landing/pricing pages

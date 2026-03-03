@@ -1,0 +1,53 @@
+---
+description: Coding patterns and component conventions for Tarifyx
+globs:
+  - "src/**/*"
+alwaysApply: false
+---
+
+# Coding Patterns
+
+## Component Structure
+- Client components: `'use client'` at top, named export (`export const ComponentName`)
+- Props: define interface above component (`interface ComponentNameProps {}`)
+- Hooks at top of component, handlers next, return last
+- One component per file (exception: small helper components used only in that file)
+
+## Styling
+- Use Tailwind for layout/spacing/color, Ant Design components for interactive UI
+- Don't mix inline `style={{}}` with Tailwind — prefer Tailwind
+- Card pattern: `className="bg-white border border-slate-200 rounded-xl shadow-sm p-6"`
+- No glassmorphism (no backdrop-blur, no bg-white/60, no shadow-xl shadow-slate-200/50)
+- Color palette: teal-600 primary, slate-900 text, slate-500 secondary, slate-50 backgrounds
+
+## Ant Design Usage
+- Import from 'antd': `import { Card, Button, Table } from 'antd'`
+- Theme overrides go in `src/theme/themeConfig.ts`, not inline
+- Use Ant's `Form`, `Table`, `Select`, `Modal` — don't rebuild these
+- Icons: use `lucide-react` (already installed), not Ant icons
+
+## API Routes
+```typescript
+// Always this pattern:
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    // ... logic
+    return NextResponse.json({ success: true, data });
+  } catch (error) {
+    console.error('[route-name]', error);
+    return NextResponse.json({ success: false, error: 'message' }, { status: 500 });
+  }
+}
+```
+
+## Error Handling
+- API routes: try/catch with console.error + structured error response
+- Client components: try/catch in async handlers, show user-facing message via Ant `message` or `notification`
+- Log with context: `console.error('[component_id]', { ts: new Date().toISOString(), error })`
+
+## Performance
+- Use `'use client'` only when needed (interactivity, hooks, browser APIs)
+- Prefer server components for static/data-fetching pages
+- Debounce user inputs (300ms) — already implemented in ProductInputSection pattern
+- Don't fetch in useEffect if you can use server components or route handlers

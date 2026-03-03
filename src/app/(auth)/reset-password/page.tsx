@@ -4,8 +4,8 @@ import { AuthLayout } from '@/features/auth/components/AuthLayout';
 import { ResetPasswordForm } from '@/features/auth/components/ResetPasswordForm';
 
 export const metadata: Metadata = {
-    title: 'Reset Password - Sourcify',
-    description: 'Set a new password for your Sourcify account',
+    title: 'Reset Password - Tarifyx',
+    description: 'Set a new password for your Tarifyx account',
 };
 
 export default function ResetPasswordPage() {

@@ -20,6 +20,13 @@ import {
     Crown,
     FlaskConical,
     Scale,
+    Map,
+    DollarSign,
+    ShieldCheck,
+    Search,
+    FileWarning,
+    Handshake,
+    ClipboardList,
 } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSession } from '@/lib/auth-client';
@@ -83,6 +90,9 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
     // TODO: Get user tier from session for badge display
     const userTier = 'free'; // Will be replaced with actual tier check
     const isPro = userTier !== 'free';
+
+    const adminEmails = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase());
+    const isAdmin = !!session?.user?.email && adminEmails.includes(session.user.email.toLowerCase());
     
     const menuItems: MenuProps['items'] = [
         {
@@ -96,14 +106,46 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             label: 'Classify',
         },
         {
-            key: '/dashboard/optimizer',
-            icon: <Scale size={18} />,
-            label: (
-                <span className="flex items-center gap-2">
-                    Optimize
-                    {!isPro && <Crown size={12} className="text-amber-500" />}
-                </span>
-            ),
+            key: 'costs',
+            icon: <DollarSign size={18} />,
+            label: 'Costs & Duties',
+            children: [
+                {
+                    key: '/dashboard/duties/calculator',
+                    label: 'Landed Cost Calculator',
+                },
+                {
+                    key: '/dashboard/intelligence/cost-map',
+                    label: 'Global Cost Map',
+                },
+                {
+                    key: '/dashboard/compliance/fta-calculator',
+                    label: 'FTA Savings',
+                },
+            ],
+        },
+        {
+            key: 'compliance',
+            icon: <ShieldCheck size={18} />,
+            label: 'Compliance',
+            children: [
+                {
+                    key: '/dashboard/compliance/denied-party',
+                    label: 'Denied Party Screen',
+                },
+                {
+                    key: '/dashboard/compliance/addcvd',
+                    label: 'AD/CVD Lookup',
+                },
+                {
+                    key: '/dashboard/compliance/pga',
+                    label: 'PGA Requirements',
+                },
+                {
+                    key: '/dashboard/compliance/hts-history',
+                    label: 'HTS History',
+                },
+            ],
         },
         {
             key: '/dashboard/products',
@@ -111,23 +153,13 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             label: 'My Products',
         },
         {
-            key: '/dashboard/sourcing',
-            icon: <Globe size={18} />,
-            label: (
-                <span className="flex items-center gap-2">
-                    Sourcing
-                    {!isPro && <Crown size={12} className="text-amber-500" />}
-                </span>
-            ),
-        },
-        {
             type: 'divider',
         },
-        {
+        ...(isAdmin ? [{
             key: '/dashboard/roadmap',
             icon: <FlaskConical size={18} />,
             label: 'Feature Lab',
-        },
+        }] : []),
         {
             key: '/dashboard/settings',
             icon: <Settings size={18} />,
@@ -143,11 +175,39 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
         if (pathname.startsWith('/dashboard/monitoring')) {
             return '/dashboard/products';
         }
-        // Handle old suppliers route - redirect to sourcing
-        if (pathname.startsWith('/dashboard/suppliers')) {
-            return '/dashboard/sourcing';
+        if (pathname.startsWith('/dashboard/intelligence/cost-map')) {
+            return '/dashboard/intelligence/cost-map';
+        }
+        if (pathname.startsWith('/dashboard/duties')) {
+            return '/dashboard/duties/calculator';
+        }
+        if (pathname.startsWith('/dashboard/compliance/denied-party')) {
+            return '/dashboard/compliance/denied-party';
+        }
+        if (pathname.startsWith('/dashboard/compliance/addcvd')) {
+            return '/dashboard/compliance/addcvd';
+        }
+        if (pathname.startsWith('/dashboard/compliance/fta-calculator')) {
+            return '/dashboard/compliance/fta-calculator';
+        }
+        if (pathname.startsWith('/dashboard/compliance/pga')) {
+            return '/dashboard/compliance/pga';
+        }
+        if (pathname.startsWith('/dashboard/compliance/hts-history')) {
+            return '/dashboard/compliance/hts-history';
         }
         return pathname;
+    };
+
+    const getOpenKeys = () => {
+        const keys: string[] = [];
+        if (pathname.startsWith('/dashboard/duties') || pathname.startsWith('/dashboard/intelligence/cost-map') || pathname.startsWith('/dashboard/compliance/fta-calculator')) {
+            keys.push('costs');
+        }
+        if (pathname.startsWith('/dashboard/compliance') && !pathname.startsWith('/dashboard/compliance/fta-calculator')) {
+            keys.push('compliance');
+        }
+        return keys;
     };
 
     const handleMenuClick = ({ key }: { key: string }) => {
@@ -160,7 +220,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                 <Anchor className="w-5 h-5 text-white" />
             </div>
             {showText && (
-                <span className="font-semibold text-lg text-slate-900">Sourcify</span>
+                <span className="font-semibold text-lg text-slate-900">Tarifyx</span>
             )}
         </div>
     );
@@ -177,6 +237,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                 <Menu
                     mode="inline"
                     selectedKeys={[getSelectedKey()]}
+                    defaultOpenKeys={getOpenKeys()}
                     items={menuItems}
                     onClick={handleMenuClick}
                     className="border-none"
@@ -252,6 +313,13 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             'optimizer': 'Strategic Classification',
             'products': 'My Products',
             'sourcing': 'Sourcing Intelligence',
+            'cost-map': 'Global Cost Map',
+            'calculator': 'Landed Cost Calculator',
+            'denied-party': 'Denied Party Screening',
+            'addcvd': 'AD/CVD Lookup',
+            'fta-calculator': 'FTA Savings Calculator',
+            'pga': 'PGA Requirements',
+            'hts-history': 'HTS Code History',
             'roadmap': 'Feature Lab',
             'settings': 'Settings',
         };
@@ -320,6 +388,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                         <Menu
                             mode="inline"
                             selectedKeys={[getSelectedKey()]}
+                            defaultOpenKeys={getOpenKeys()}
                             items={menuItems}
                             onClick={handleMenuClick}
                             className="border-none"

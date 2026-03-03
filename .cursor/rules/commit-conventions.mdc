@@ -1,0 +1,18 @@
+---
+description: Git commit and branch naming conventions
+globs:
+  - "**/*"
+alwaysApply: false
+---
+
+# Git Conventions
+
+## Commits
+`<type>(<scope>): <description>` — keep under 72 chars.
+
+Types: feat, fix, refactor, docs, style, test, chore, perf
+Scope (optional): classification, tariff, ui, auth, compliance
+
+## Branches
+- `feature/<description>` / `fix/<description>` / `refactor/<area>`
+- main → production

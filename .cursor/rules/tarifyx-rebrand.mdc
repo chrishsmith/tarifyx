@@ -1,0 +1,431 @@
+---
+description: Tarifyx implementation roadmap and active work context
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Tarifyx — Implementation Roadmap
+
+## STATUS: Phase 1 COMPLETE. Phase 2 COMPLETE. Phase 3 (Polish & Integration) IN PROGRESS. Next: Phase 4 (Monetization).
+
+### Phase 1A Audit Results (Feb 8, 2026)
+**Files audited:** 12 | **Bugs fixed:** 3 | **Dead code identified:** 2 files
+
+**FIXES APPLIED:**
+- `engine-v10.ts`: Fixed SetFit path calling `getEffectiveTariff()` with wrong argument order and wrong return type handling (was passing `(htsCode, origin, dest)` instead of `(origin, htsCode, options)` — would crash if SetFit ever activated)
+- `history.ts`: Migrated localStorage keys from `sourcify_*` to `tarifyx_*` with auto-migration of existing user data
+- `engine.ts`: Added `response_format: { type: 'json_object' }` to Phase 3 AI call to prevent markdown-wrapped JSON responses
+
+**DEAD CODE IDENTIFIED (safe to remove later):**
+- `productClassifier.ts` — V8 route determination, not used by V10 pipeline (only imported from `hts/decision-tree.ts` which is only imported from archive)
+- `productNormalization.ts` — only imported from archived V5 engine
+
+**DEPRECATED (migrate before removing):**
+- `engine.ts` — Old V2 engine (2 AI calls in critical path, slower). Used by `/api/classify` and `/api/classify/bulk`. Both should migrate to V10's `classifyV10()`.
+- `/api/classify/route.ts` + `/api/classify/bulk/route.ts` — Use deprecated engine
+
+**V10 ENGINE OPTIMIZATION — IMPLEMENTED (Feb 8, 2026)**
+
+All 5 items from the optimization plan have been implemented:
+
+1. **`src/services/classification/headingClassifier.ts`** ✅ — New Phase 0 heading prediction with 3-tier strategy: deterministic pattern matching (~5ms), SetFit ML heading extraction (~50-100ms), AI/Grok fallback (~500ms). Merges function-over-material routing from productClassifier.ts. Gates search to predicted headings when confidence >70%.
+
+2. **`engine-v10.ts` restructured** ✅ — Phase 0 (heading prediction) inserted before search. Constrained search reduces search space by ~95% when heading confidence is high. LLM reranker skipped when heading confidence >80% (removes ~1-3s from critical path).
+
+3. **Split confidence** ✅ — `splitConfidence` field: `{ heading, code, combined, headingExplanation, codeExplanation }`. Combined = heading × code / 100. UI can now show "95% sure about heading, 89% sure about exact code".
+
+4. **`src/data/chapterExclusions.ts`** ✅ — 40+ static exclusion rules from HTS Chapter Notes. Used by heading classifier and search filter to prevent chapter-level errors. Covers plastics, rubber, metals, textiles, furniture, toys, electronics, instruments.
+
+5. **SetFit heading extraction** ✅ — `extractHeadingPrediction()` added to setfitClassifier.ts. Extracts 4-digit heading from 6-digit prediction with confidence boost. SetFit results now validated against heading classifier to catch chapter-level conflicts.
+
+**V10 FRONTEND WIRING — COMPLETE (Feb 8, 2026)**
+
+The V10 engine's `splitConfidence` and `headingPrediction` fields are now surfaced in both UI flows:
+
+1. **Types updated** ✅ — `SplitConfidence` + `HeadingPredictionSummary` added to `import-intelligence/types/index.ts`. `SplitConfidence` + `HeadingPredictionInfo` added to `classification.types.ts`.
+
+2. **Orchestrator wired** ✅ — `orchestrator.ts` `getClassification()` extracts `splitConfidence` and `headingPrediction` from `classifyV10()` result and passes through to the `Classification` object.
+
+3. **ClassificationSection.tsx** ✅ — Import-intelligence flow shows heading vs code confidence as a two-column breakdown with color-coded progress bars, explanations, and heading method badge (Pattern Match / ML Model / AI Analysis) + "Search Gated" indicator.
+
+4. **ClassificationResult.tsx** ✅ — Compliance flow circular progress uses `splitConfidence.combined`, with heading/code mini-bars beneath and method badges. Falls back to `result.confidence` when `splitConfidence` is absent.
+
+**Note:** The `/api/classify-v10/route.ts` already returned these fields — only the frontend types, orchestrator passthrough, and UI components needed updating.
+
+**PHASE 1B: TARIFF CALCULATION AUDIT — COMPLETE (Feb 8, 2026)**
+
+**Files audited:** 8 | **Bugs fixed:** 5 | **Dead code identified:** 1 file
+
+**FIXES APPLIED:**
+- `registry.ts`: **CRITICAL** — `checkSection232()` was incorrectly applying 25% steel tariff to consumer goods (pots/pans 7323, sanitary ware 7324, springs 7320, stoves 7321, etc.). Per Proclamation 9705, only Chapter 72 + headings 7301-7313 are covered. Removed headings 7317-7326 from steel prefixes.
+- `landed-cost.ts`: Sync `calculateEffectiveTariff()` fallback was missing Section 232 check entirely — registry async path included it but sync path skipped it. Added `isSection232Product()` check + `section232Rate` field to both sync and async return types.
+- `landed-cost.ts` + `api/landed-cost/route.ts`: MPF min/max values were outdated ($27.75/$538.40 and $31.67/$614.35 respectively). Updated both to FY2026 CBP values: $33.58 min, $651.50 max (effective Oct 1, 2025, per CBP Dec 25-10).
+- `LandedCostCalculator.tsx`: localStorage key `sourcify_landed_cost_scenarios` migrated to `tarifyx_landed_cost_scenarios` with auto-migration of existing user data.
+- `LandedCostCalculator.tsx`: Purple gradient buttons/badges (`#7C3AED`/`#5B21B6`) replaced with teal (`#0D9488`/`#0F766E`) per design system. Compare mode, save button, modal, scenario selection all fixed.
+- `LandedCostCalculator.tsx`: MPF tooltip showed wrong min/max values — updated to match actual constants.
+- `tariffPrograms.ts`: Updated stale "Last Updated: December 2024" metadata to February 2026.
+
+**DEAD CODE IDENTIFIED (safe to remove):**
+- `additional-duties.ts` — Fully deprecated, marked with `@deprecated`, has zero importers. All consumers use `registry.ts` or `landed-cost.ts`. Can be safely deleted.
+
+**ARCHITECTURE NOTES (Phase 1B):**
+- `registry.ts` is well-structured: single source of truth for tariff rates, DB-backed with Prisma, proper fallback handling
+- `registry-sync.ts` is comprehensive: ISO 3166-1 countries, USITC API for live Chapter 99 rates, Federal Register monitoring, AD/CVD warnings
+- `alerts.ts` is clean: properly uses registry, correct trigger logic, good CRUD operations
+- `tariffPrograms.ts` is the static reference data — consistent with registry, good Section 232 product detection in `isSection232Product()` (more accurate than registry's old `checkSection232`)
+- `landed-cost.ts` has good dual-path design: async registry with sync fallback, proper FTA/IEEPA interaction modeling
+- `LandedCostCalculator.tsx` is feature-rich: scenario save/load/compare, clean form validation, good error states
+- `TariffBreakdown.tsx` is clean and compact: proper severity color coding, collapsible learn-more, AD/CVD warnings
+
+**PHASE 1C: USITC DATAWEB INTEGRATION AUDIT — COMPLETE (Feb 8, 2026)**
+
+**Files audited:** 5 | **Bugs fixed:** 5 | **Dead code removed:** 1 function | **Rebrand fixes:** 5 files
+
+**FIXES APPLIED:**
+- `usitcDataWeb.ts`: **BUG** — `avgUnitValue < 10000` cap was filtering out all industrial goods (CNC machines, semiconductors, medical devices). Removed arbitrary cap — only filter out zero/negative values now.
+- `usitcDataWeb.ts`: Hardcoded field names `year2023`/`year2024` renamed to `yearA`/`yearB` — the actual years queried are dynamic (defaults to current + previous year), field names were misleading.
+- `usitcDataWeb.ts`: Added `AbortController` timeout (15s) to prevent hung API requests. Parallelized quantity + value queries with `Promise.all()` for ~2x speedup.
+- `usitcDataWeb.ts`: Dynamic year calculation (`new Date().getFullYear()`) instead of hardcoded `[2025, 2024]`. Stale comment date updated to Feb 2026. Reference to deleted `additionalDuties.ts` updated to `registry.ts`.
+- `usitc.ts`: Added `AbortController` timeout (10s) to HTS Search API calls. Removed dead `parseDataWebCommodityTree()` function (never called). Reduced excessive debug logging.
+- `cost-aggregation.ts`: Expanded `getCountryName()` map from 24 countries to 80+ countries (was returning raw ISO codes for most countries). Fixed N+1 query pattern in `saveAggregatedCosts()` — was doing individual `findUnique` + `update`/`create` per country, now uses batch `upsert` in a `$transaction`.
+- `revision-checker.ts`: Removed unused `RevisionStatus` import.
+- Rebrand fixes: `pdfExportService.ts` footer URLs `www.sourcify.io` → `www.tarifyx.com` (2 instances), filename prefix `sourcify-classification-` → `tarifyx-classification-`. `scrapers/types.ts` user-agent `SourceifyBot` → `TarifyxBot`. `dev-login/route.ts` + `seed-demo-user.ts` email `demo@sourcify.dev` → `demo@tarifyx.dev`.
+
+**DEAD CODE REMOVED:**
+- `usitc.ts` → `parseDataWebCommodityTree()` — unreachable function, never called by any code path. `searchByHtsCode()` uses `parseDataWebDescriptionLookup()` and `searchByKeyword()` uses `parseDataWebSearchResults()`.
+
+**ARCHITECTURE NOTES (Phase 1C):**
+- `usitcDataWeb.ts` is the real data pipeline — fetches actual USITC import volumes/values by country for any HTS code. Well-structured query builder, good country mapping (150+ countries).
+- `usitc.ts` is the HTS code lookup service — searches by keyword or code, validates HTS codes, gets duty rates with proper rate inheritance. Dual-API strategy (free HTS Search API → DataWeb fallback) is good.
+- `database.ts` is clean and well-structured — proper HTS hierarchy utilities, rate parsing, search with dynamic variation generation. No changes needed.
+- `cost-aggregation.ts` does real statistical analysis (IQR outlier removal, confidence scoring) — solid for converting raw shipment data into cost-by-country intelligence.
+- `revision-checker.ts` properly checks USITC for new HTS editions with API + scrape fallback. Good revision tracking in DB.
+
+**ALL DEAD CODE FROM PHASES 1A/1B NOW DELETED:**
+- `productClassifier.ts`, `productNormalization.ts`, `hts/decision-tree.ts`, `tariff/additional-duties.ts` — all confirmed zero active importers, already removed from working tree.
+
+**PHASE 2A: NEW USER FLOW AUDIT — COMPLETE (Feb 8, 2026)**
+
+**Files audited:** 9 | **Bugs fixed:** 8 | **Rebrand fixes:** 4
+
+**FIXES APPLIED:**
+- `page.tsx` (landing): Replaced bare-bones hero with proper nav bar (logo + Pricing link + Sign In + Get Started CTA). Headline changed from generic "Tarifyx" to benefit-driven "Stop overpaying on import duties". Tags now show proof points (27K+ HTS Codes, 199 Countries, 90%+ Accuracy). Primary CTA differentiates sign-up from pricing.
+- `LoginForm.tsx`: Sign-ups now route to `/onboarding` (was going straight to `/dashboard` — new users saw empty dashboard). Supports `?mode=signup` URL param from landing CTA. Removed non-functional GitHub/SSO buttons and dead "Forgot password?" link. Added password minimum validation for sign-up. Typed `onFinish` values instead of `any`.
+- `OnboardingWizard.tsx`: **CRITICAL** — Completely rewired from fake `setTimeout` mock to real V10 classify API. Now calls `/api/classify-v10`, shows real HTS code + confidence + split confidence + alternatives. Added country selector, example product suggestions, error state, and "Classify Another" flow.
+- `AuthLayout.tsx`: Removed `shadow-xl shadow-slate-200` (glassmorphism) → `shadow-sm border-slate-200`.
+- `DashboardLayout.tsx`: Sign Out now calls `authClient.signOut()` (was just `router.push('/login')` — session wasn't cleared).
+- `TariffIntelligenceCard.tsx`: New user empty state now shows helpful guidance ("Save products to monitor tariff changes") with CTA to classify, instead of cryptic "Unable to load" error.
+- `PricingPageContent.tsx`: Fixed 4 issues — `sales@sourcify.dev` → `sales@tarifyx.dev` (2 places), `/dashboard/classifications` legacy route → `/dashboard/import/analyze` (3 places), `shadow-lg shadow-slate-200/50` → `shadow-sm` (design system compliance), "Get Started Free" nav link → `/login?mode=signup`.
+
+**PHASE 2B: CLASSIFICATION FLOW AUDIT — COMPLETE (Feb 8, 2026)**
+
+**Files audited:** 6 | **Bugs fixed:** 7 | **Rebrand fixes:** 3
+
+**FIXES APPLIED:**
+- `ProductInputSection.tsx`: CSS class `sourcify-checkbox` → `tarifyx-checkbox` (6 instances). Removed heavy `shadow-[0_20px_25px...]` → `shadow-sm`.
+- `analyze/page.tsx`: Replaced `alert()` with Ant's `message.error()`. Added structured error logging.
+- `ResultsContainer.tsx`: Removed emoji from header (`🧭`). Replaced gradient badges (`bg-gradient-to-br from-purple-500`) with solid colors matching design system. Cleaned 3 unused imports (`Info`, `AlertTriangle`, `TrendingUp`).
+- `ClassificationSection.tsx`: Removed 2 debug `console.log` statements left in production code.
+- `orchestrator.ts`: Expanded `getCountryName()` from 7 countries to 80+ (was returning raw ISO codes for most countries).
+- `FTAQualificationCalculator.tsx`: localStorage key `sourcify_fta_saved_boms` → `tarifyx_fta_saved_boms` with auto-migration.
+- `ComplianceAlerts.tsx`: localStorage key `sourcify_alert_preferences` → `tarifyx_alert_preferences` with auto-migration.
+
+**ARCHITECTURE NOTES:**
+- V10 engine (`engine-v10.ts`, 2657 lines) is the core — well-structured, 6-phase pipeline: tokenize → SetFit fast path → semantic/keyword search → deterministic scoring → LLM reranker (conditional) → result building
+- `llmReranker.ts` + `rulingsSemanticSearch.ts` use OpenAI (gpt-4o-mini + text-embedding-3-small), rest of app uses xAI. This is intentional — OpenAI mini is cheaper/faster for reranking, and embeddings aren't available via xAI.
+- `validator.ts` is a solid semantic safety net catching category mismatches (personal items classified as vehicle parts, etc.)
+- `crossRulingsService.ts` loads 4000+ CROSS rulings from JSON for few-shot prompting — good quality, well-curated
+- `setfitClassifier.ts` is an optional fast path (50-100ms) requiring a separate Python inference server — gracefully degrades when unavailable
+
+**PHASE 2C: LANDED COST FLOW AUDIT — COMPLETE (Feb 8, 2026)**
+
+**Files audited:** 8 | **Bugs fixed:** 7 | **Design system fixes:** 3 components | **API fixes:** 2 routes
+
+**FIXES APPLIED:**
+- `LandedCostSection.tsx`: **DESIGN SYSTEM** — Replaced indigo gradient (`#EEF2FF`/`#E0E7FF`/`text-indigo-600`) on Total Landed Cost box with teal (`#F0FDFA`/`#CCFBF1`/`text-teal-600`). Replaced blue-violet gradient on "Export breakdown" button with teal gradient + copy-to-clipboard functionality. Added tooltip to disabled "Save scenario" button explaining it's available in the Landed Cost Calculator. Removed duplicate local `formatHtsCode` function — now imports shared `@/utils/htsFormatting`.
+- `CountryComparisonDrawer.tsx`: **DESIGN SYSTEM** — Globe icon `text-indigo-600` → `text-teal-600`. Current country card `bg-indigo-50 border-indigo-200 ring-indigo-100` → `bg-teal-50 border-teal-200 ring-teal-100`. Current selection tag `color="blue"` → `color="cyan"`. CTA button `#155DFC/#4F39F6` (blue-violet) → `#0D9488/#0F766E` (teal).
+- `CountryCompareSection.tsx`: Current country row `bg-blue-50` → `bg-teal-50`. Removed emoji from recommendation alert message (`💡 Recommendation` → `Recommendation`).
+- `api/sourcing/quick/route.ts`: **BUG** — Removed `DATAWEB_MAX_UNIT_VALUE = 10000` cap that was filtering out industrial goods (CNC machines, semiconductors) in the DataWeb fallback path. Same bug was fixed in `usitcDataWeb.ts` during Phase 1C but persisted here. Also fixed all error responses to include `success: false` field.
+- `api/sourcing/landed-cost/route.ts`: Fixed all 3 error responses to include `success: false` field (was returning bare `{ error: '...' }` without success field). Removed trailing blank lines.
+
+**ARCHITECTURE NOTES (Phase 2C):**
+- `LandedCostCalculator.tsx` (standalone page) was already fixed in Phase 1B — clean, well-structured with scenario save/load/compare
+- `LandedCostSection.tsx` (import-intelligence flow) is the inline cost breakdown shown after classification. Good collapsible sections, data quality indicators, contextual insights (USMCA/301)
+- `CountryComparisonDrawer.tsx` is well-built — proper AbortController, debounced fetches, good loading/error/empty states
+- `CountryCompareSection.tsx` is clean — Ant Table with proper sorting, savings calculation, FTA indicators
+- `TariffBreakdown.tsx` is clean — no changes needed (already fixed in Phase 1B)
+- `api/landed-cost/route.ts` is solid — proper validation, MPF/HMF calculations with FY2026 values, full tariff stack
+- `api/sourcing/quick/route.ts` has good dual-path design (DB-first → DataWeb fallback) with confidence scoring
+- `api/sourcing/landed-cost/route.ts` is a thin proxy — delegates to `landed-cost.ts` service layer, supports single/comparison/quick modes
+
+**PHASE 2D: COMPLIANCE FLOW AUDIT — COMPLETE (Feb 8, 2026)**
+
+**Files audited:** 14 | **Bugs fixed:** 1 | **Components clean:** 6
+
+**FIXES APPLIED:**
+- `chapter99.ts`: **BUG** — `getLiveAdditionalDuties()` used `cleanCode.startsWith('73')` for Section 232 steel check, applying 25% tariff to ALL of chapter 73 including consumer goods (cookware 7323, sanitary ware 7324, springs 7320). Fixed to only match Chapter 72 + headings 7301-7313 per Proclamation 9705, consistent with `registry.ts` fix from Phase 1B.
+- `chapter99.ts`: Removed trailing blank line.
+
+**COMPONENTS — ALL CLEAN:**
+- `DeniedPartySearch.tsx` — Excellent: single search + batch CSV screening + Excel export + detail modals + audit log references. Uses teal correctly. No issues.
+- `ADCVDLookup.tsx` — Clean: debounced search, risk assessment banners, external resource links (CBP/ITC/ITA), detail modals. No design system violations.
+- `FTAQualificationCalculator.tsx` — Clean: BOM management, RVC + tariff shift analysis, duty savings calculation, saved BOMs with localStorage migration (already done in Phase 2B). No issues.
+- `FTARulesLookup.tsx` — Clean: FTA eligibility status, rule detail modals, reference cards, debounced search. No issues.
+- `PGALookup.tsx` — Clean: HTS-code-based PGA flag lookup, agency reference cards, flag detail modals, external resource links. No issues.
+- `ComplianceAlerts.tsx` — Already fixed in Phase 2B (localStorage migration).
+
+**SERVICES — ALL CLEAN:**
+- `ofac-service.ts` — Well-structured: parallel CSV download, batch upsert, checksum-based change detection, soft-delete deactivation. User-Agent already says "Tarifyx".
+- `bis-service.ts` — Well-structured: uses Trade.gov Consolidated Screening List API, parses both Entity List and Denied Persons, batch processing. User-Agent already says "Tarifyx".
+- `chapter99.ts` — Good: live USITC API rate fetching with 1-hour cache, covers Section 301 + IEEPA + Section 232 programs. Fixed Section 232 scope.
+
+**PAGES — ALL CLEAN:**
+- All 8 compliance page files are thin wrappers rendering feature components. Consistent pattern. Some have unnecessary `'use client'` (the imported components already have it), but harmless.
+
+**ARCHITECTURE NOTES (Phase 2D):**
+- Compliance features are mature and well-built — most thorough feature set in the app
+- `DeniedPartySearch` batch screening is production-grade: CSV parsing, progress tracking, Excel export, audit log
+- `chapter99.ts` live rate service is the only service that fetches Chapter 99 rates directly from USITC API — good complement to static registry data
+- All compliance services use proper error handling, sync logging, and batch processing patterns
+
+**PHASE 2E: PORTFOLIO & MONITORING FLOW AUDIT — COMPLETE (Feb 8, 2026)**
+
+**Files audited:** 12 | **Bugs fixed:** 7 | **Design system fixes:** 2 | **Dead code identified:** 2 components
+
+**FIXES APPLIED:**
+- `sourcing/page.tsx`: **BUG** — Used deprecated `/api/classify` endpoint (V2 engine, 2 AI calls, slower). Migrated to `/api/classify-v10` with correct request/response shape. V10 returns `result.code` not `result.htsCode.code`.
+- `sourcing/page.tsx`: **DESIGN SYSTEM** — Navigation context banner used `bg-indigo-50 border-indigo-200 text-indigo-900` → fixed to `bg-teal-50 border-teal-200 text-teal-900`. Removed emoji (`🔍`) → replaced with `<Search>` icon.
+- `TariffMonitoringTab.tsx`: **BUG** — Empty state "Classify a Product" card linked to `/dashboard/classifications` (legacy route). Fixed to `/dashboard/import/analyze`.
+- `TariffMonitoringTab.tsx`: **UI** — Two "Add Product" modals used native HTML `<select>` instead of Ant's `Select` component. Replaced with `<Select showSearch>` using `COUNTRY_OPTIONS` constant (18 countries). Also removed unused `Filter`/`Download` imports.
+- `ClassificationsTable.tsx`: **BUG** — Empty state "Classify a Product" link pointed to `/dashboard/classify` (legacy). Fixed to `/dashboard/import/analyze`.
+- `ProductDetailDrawer.tsx`: **CLEANUP** — Had local duplicate `formatHtsCode()` function. Replaced with shared import from `@/utils/htsFormatting`.
+- `TariffDashboard.tsx`: **BUG** — `Statistic` title had typo "projected" (lowercase p) → "Projected". `Space` component used invalid prop `orientation="vertical"` → `direction="vertical"`. Alert used stale text about "Section 301 exclusions expire Dec 31st" → updated to current "IEEPA reciprocal tariffs effective April 9, 2025".
+- `PortfolioDashboard.tsx`: Removed emojis from header (`📊`) and optimization card title (`💡`). Removed unused `AlertTriangle` import.
+- `MyPortfolioPage.tsx`: Removed emoji from header (`📁`).
+
+**DEAD/REDUNDANT COMPONENTS IDENTIFIED:**
+- `MyPortfolioPage.tsx` — Entirely mock data (3 hardcoded products), no API integration. Superseded by `/dashboard/products/page.tsx` which has real DB-backed product list with `ClassificationsTable`, `TariffMonitoringTab`, alerts tab, and portfolio analysis placeholder. Only referenced from `/dashboard/import/portfolio/page.tsx` which is not linked from navigation.
+- `TariffDashboard.tsx` — 100% mock data (hardcoded alerts, stats). Used by `MonitoringPageContent.tsx` → `/dashboard/monitoring/page.tsx`. The monitoring page is mapped as a legacy route in `DashboardLayout` (redirects to `/dashboard/products`). The real monitoring functionality lives in `TariffMonitoringTab.tsx` which is DB-backed with live tariff registry data.
+
+**COMPONENTS — ALL CLEAN (WELL BUILT):**
+- `/dashboard/products/page.tsx` — Excellent: 4-tab layout (All Products, Monitored, Alerts, Portfolio Analysis). URL-synced tabs, Suspense boundary, proper skeleton loading, separate stat fetching for badges.
+- `ClassificationsTable.tsx` — Solid: server-side pagination, debounced search, favorite/monitor toggles, detail modal with classification display, delete confirmation. Good error handling.
+- `TariffMonitoringTab.tsx` — Comprehensive: stats header, enriched tariff data from registry, rate change indicators, tariff program breakdown tags, trade status badges, favorite/star system, search + filter, "Add Product" modal with 3 entry points (HTS code / classify / cost analysis), product detail drawer. 1050 lines but well-structured.
+- `ProductDetailDrawer.tsx` — Feature-rich: dark header with trade status, rate breakdown with program-colored tags, rate history timeline, sourcing alternatives with savings calc, monitoring toggle, HTS hierarchy via `ClassificationPath`. Clean architecture.
+- `ComplianceAlerts.tsx` — Already clean from Phase 2B (localStorage migration done).
+
+**ARCHITECTURE NOTES (Phase 2E):**
+- The portfolio flow has two generations: old (`MyPortfolioPage` / `PortfolioDashboard` — mock data) and new (`/dashboard/products` + `TariffMonitoringTab` + `ProductDetailDrawer` — DB-backed). The old generation is dead weight.
+- `/dashboard/products` is the real "My Products" hub — properly wired to `/api/saved-products` with pagination, search, monitoring, favorites, and the `ProductDetailDrawer` for detail view.
+- `TariffMonitoringTab` is reused in both `/dashboard/products` (Monitored tab) and `/dashboard/sourcing` (Monitoring tab) — good component reuse.
+- The sourcing page (`/dashboard/sourcing`) has a full "Classify → Analyze → Find Suppliers" flow but was using the deprecated V2 engine — now fixed to V10.
+- The `ProductDetailDrawer` fetches sourcing alternatives via `/api/sourcing/hts-costs` — good progressive disclosure pattern.
+
+## APPROACH
+**Audit → Fix → Polish → Monetize.** Go function-by-function, page-by-page. Read every file thoroughly. Identify what's broken, incomplete, confusing, or poorly implemented. Fix it. Make the user flow intuitive. Only add Stripe/payments after the core product is solid.
+
+When auditing, always:
+- Read the FULL file (don't skim)
+- Check for: dead code, hardcoded values, missing error handling, poor UX, broken flows, inconsistent patterns
+- Test the logic mentally: "If a user does X, what happens?"
+- Suggest and implement improvements, don't just list problems
+- After fixing, verify with lints
+
+## PRODUCT SCOPE
+
+### What Exists (All Working — Quality TBD)
+- AI HTS classification (V10 engine, 27K codes, 90%+ accuracy)
+- Landed cost calculator (full tariff stack: MFN + 301 + IEEPA + 232 + ADD/CVD + fees)
+- Country cost comparison (tariff calc for 199 countries + USITC import volumes)
+- Compliance: Denied party screening (OFAC/BIS), ADD/CVD lookup, FTA rules + calculator, PGA
+- Trade statistics dashboard (USITC DataWeb)
+- Tariff tracker, compliance alerts, HTS history
+- Portfolio (saved products + monitoring)
+- Export (PDF/Excel/CSV)
+- UI rebranded to Tarifyx (teal theme, clean B2B style, simplified nav)
+
+### Core Product Loop
+**Classify → Calculate → Optimize → Monitor → Act**
+
+### Pricing Model (to implement after audit)
+- Free: 5 classifications/day, 10 saved products, 3-country comparison
+- Pro ($99/mo): Unlimited everything, compliance, FTA, alerts, exports
+
+## AUDIT PHASES (Current Priority)
+
+### Phase 1: Core Engine Audit
+Deep review of the classification pipeline — the foundation everything depends on.
+
+**1A. V10 Classification Engine**
+- `src/services/classification/engine-v10.ts` — main engine
+- `src/services/classification/engine.ts` — older engine (should this exist?)
+- `src/services/classification/llmReranker.ts` — LLM reranking step
+- `src/services/classification/validator.ts` — result validation
+- `src/services/classification/history.ts` — search history
+- `src/services/setfitClassifier.ts` — SetFit ML model integration
+- `src/services/productClassifier.ts` — product classification service
+- `src/services/productNormalization.ts` — input normalization
+- `src/services/crossRulingsService.ts` — CBP rulings search
+- `src/services/rulingsSemanticSearch.ts` — semantic search over rulings
+- `src/app/api/classify-v10/route.ts` — API endpoint
+- `src/app/api/classify/route.ts` — older API endpoint (needed?)
+- Audit: accuracy, speed, error handling, edge cases, dead code, redundant engines
+
+**1B. Tariff Calculation**
+- `src/services/tariff/registry.ts` — source of truth for rates
+- `src/services/tariff/registry-sync.ts` — syncs rates from APIs
+- `src/services/tariff/additional-duties.ts` — additional duty calcs (deprecated?)
+- `src/services/tariff/alerts.ts` — tariff change detection
+- `src/data/tariffPrograms.ts` — special tariff program database
+- `src/services/sourcing/landed-cost.ts` — landed cost calculation
+- `src/features/compliance/components/LandedCostCalculator.tsx` — UI
+- `src/features/compliance/components/TariffBreakdown.tsx` — display
+- Audit: calculation accuracy, are all tariff layers correct, edge cases (zero duty, FTA, etc.)
+
+**1C. USITC DataWeb Integration**
+- `src/services/usitcDataWeb.ts` — API client
+- `src/services/hts/cost-aggregation.ts` — cost data processing
+- `src/services/hts/database.ts` — HTS database operations
+- Audit: data freshness, error handling, caching, rate limits
+
+### Phase 2: User Flow Audit
+Walk through the site as each user type would. Fix every friction point.
+
+**2A. New User Flow**
+- Landing page → Sign up → First classification → See results → Understand value
+- Is the path clear? Any dead ends? Does the user understand what to do next?
+
+**2B. Classification Flow**
+- Product input → AI classification → Results display → Alternatives
+- `src/features/import-intelligence/components/ProductInputSection.tsx`
+- `src/features/import-intelligence/components/ResultsContainer.tsx`
+- `src/features/import-intelligence/components/ClassificationSection.tsx`
+- `src/services/import-intelligence/orchestrator.ts`
+- `src/app/(dashboard)/dashboard/import/analyze/page.tsx`
+- Audit: form UX, loading states, error states, results clarity, next-step guidance
+
+**2C. Landed Cost Flow**
+- Enter HTS + country + value → See full duty breakdown → Compare countries
+- `src/app/(dashboard)/dashboard/duties/calculator/page.tsx`
+- `src/features/compliance/components/LandedCostCalculator.tsx`
+- `src/features/import-intelligence/components/LandedCostSection.tsx`
+- `src/features/import-intelligence/components/CountryCompareSection.tsx`
+- `src/features/import-intelligence/components/CountryComparisonDrawer.tsx`
+- Audit: data flows between classification and cost calc, are handoffs smooth, can user easily compare countries
+
+**2D. Compliance Flow**
+- Denied party screening, ADD/CVD, FTA qualification
+- Are these discoverable? Do they connect logically from classification results?
+
+**2E. Portfolio & Monitoring Flow**
+- Save products → Track alerts → See changes over time
+- `src/features/import-intelligence/components/MyPortfolioPage.tsx`
+- `src/features/import-intelligence/components/PortfolioDashboard.tsx`
+- `src/features/compliance/components/ComplianceAlerts.tsx`
+- `src/features/compliance/components/MonitoringPageContent.tsx`
+
+### Phase 3: Polish & Integration — IN PROGRESS (Feb 8, 2026)
+After audit fixes, make everything feel cohesive.
+
+**3A. Dead Code Removal — COMPLETE**
+- `ModeSelector.tsx` — deleted (last remaining dead component, zero importers)
+- `MyPortfolioPage.tsx`, `PortfolioDashboard.tsx`, `TariffDashboard.tsx`, `MonitoringPageContent.tsx`, `BulkUpload.tsx`, `ProcessingStatus.tsx` — already deleted in Phase 2E
+- `/dashboard/import/bulk/page.tsx`, `/dashboard/import/portfolio/page.tsx`, `/dashboard/monitoring/page.tsx` — already deleted (imported deleted components, not in nav)
+
+**3B. Error Boundaries — COMPLETE**
+- Created `src/app/(dashboard)/error.tsx` — dashboard-level Next.js error boundary using `ErrorState` component with retry support and structured error logging
+- Created `src/app/(dashboard)/loading.tsx` — dashboard-level loading skeleton using `LoadingState` component for page transitions
+
+**3C. Loading State Standardization — COMPLETE**
+Replaced bare Ant `Spin` with shared `LoadingState` component in 5 components:
+- `DashboardOverview.tsx` — section loading spinner → `LoadingState`
+- `OnboardingWizard.tsx` — classification loading → `LoadingState` with contextual message
+- `TradeStatsDashboard.tsx` — full-page loading → `LoadingState fullHeight`
+- `HTSHistoryLookup.tsx` — search loading → `LoadingState` in card
+- `DutyOptimizerContent.tsx` — analysis loading → `LoadingState` with progress bar
+
+**3D. Error State Standardization — COMPLETE**
+- `TradeStatsDashboard.tsx` — replaced inline `Alert` error with `ErrorState` component + retry handler
+
+**3E. Empty State Standardization — COMPLETE**
+Replaced bare Ant `Empty` with shared `EmptyState` component in 3 components:
+- `ProductDetailDrawer.tsx` — "Product not found" + "No alternatives found" → `EmptyState` with icons and descriptions
+- `CountryComparisonDrawer.tsx` — "No comparison data" → `EmptyState` with search icon
+- `DutyOptimizerContent.tsx` — "No applicable codes" → `EmptyState` with search icon and CTA text
+
+**3F. DashboardLayout Cleanup — COMPLETE**
+- Replaced bare `Spin` session loading with `LoadingState`
+- Removed stale page title entries (`classifications`, `classify`, `alerts`) for deleted routes
+- Added missing page titles (`sourcing`, `suppliers`, `roadmap`)
+- Legacy route redirects in `getSelectedKey()` preserved for bookmark compatibility
+
+**3G. Optimization Opportunities Section Audit — COMPLETE (Feb 9, 2026)**
+
+**Files audited:** 4 | **Bugs fixed:** 8 | **Logic rewritten:** 1 function | **Component rewritten:** 1
+
+**FIXES APPLIED:**
+- `types/index.ts`: Added `OptimizationType`, `OptimizationDifficulty`, `OptimizationPriority` types. Added `savingsPercent`, `actionLabel`, `actionUrl`, `difficulty`, `priority`, `relatedSection` fields to `OptimizationOpportunity`. Note in `Optimization.totalPotentialSavings` that savings are de-duplicated.
+- `orchestrator.ts` `getOptimizationOpportunities()`: **REWRITTEN** — was 50 lines with 2 opportunity types and hardcoded tradeoffs. Now 200+ lines generating up to 7 opportunity types by synthesizing data from ALL prior analysis steps:
+  1. **Country switch** — uses real transit days, supplier counts, data quality, cost trends from country comparison. Relative savings threshold (2% or $500, whichever greater) instead of hardcoded $1000.
+  2. **FTA qualification** — identifies specific FTA name, links to FTA Calculator with pre-filled HTS code. De-duplicated from country switch when same country.
+  3. **Classification review** — triggered when confidence <85% AND alternative HTS codes have materially lower duty rates (>3pp). Estimates savings from rate difference.
+  4. **Section 232 exclusion** — triggered from compliance Section 232 alert. Links to Commerce portal.
+  5. **AD/CVD mitigation** — triggered when AD/CVD warning exists AND an AD/CVD-free alternative country has savings.
+  6. **High tariff alert** — triggered when effective rate >50% and no other opportunities found. Identifies biggest cost driver layer.
+  7. **Duty drawback** — triggered for high-duty products (>30% rate, >$5000 duty). Recovery of up to 99% if goods re-exported.
+- `orchestrator.ts`: **BUG FIX** — `totalPotentialSavings` was naively summing all opportunity savings, double-counting when FTA country = country switch country. Now properly de-duplicates: sourcing strategies (country switch, FTA, AD/CVD) are mutually exclusive (take max), classification review and Section 232 exclusion are additive.
+- `orchestrator.ts`: **BUG FIX** — Country switch title used raw ISO codes (`Switch from CN to VN`) instead of country names.
+- `orchestrator.ts`: **BUG FIX** — Tradeoffs were generic hardcoded strings. Now data-driven from country comparison (transit time diff, supplier count, data quality, cost trend).
+- `orchestrator.ts`: Function signature updated to accept `Classification` and `Compliance` objects (was only using `htsCode` string and ignoring compliance data entirely).
+- `OptimizationSection.tsx`: **REWRITTEN** — removed emoji number indicators (`1️⃣`), replaced with color-coded numbered badges matching opportunity type. Added difficulty tags (Quick Win / Moderate Effort / Strategic Change). Added priority tags. Tradeoffs rendered in amber warning box. Each opportunity has contextual CTA button linking to relevant tool. Dead CTAs ("Generate Optimization Report", "Schedule Consultation") removed. Green gradient savings card replaced with teal-50 card matching design system. Uses `EmptyState` component when no opportunities found.
+- `ResultsContainer.tsx`: Collapse header shows `Tag color="green"` with savings amount when >0, `Tag color="blue"` with suggestion count when opportunities exist but savings=0, or `Tag color="green" Optimized` when no opportunities at all (was showing "$0 savings" which looked broken).
+
+**ARCHITECTURE NOTES (3G):**
+- Optimization is the synthesis layer — it should summarize actionable insights from all 5 prior steps. Previously it only used country comparison data. Now it cross-references classification confidence, tariff layer breakdown, compliance alerts, and country comparison alternatives.
+- The de-duplication logic is important: country switch, FTA qualification, and AD/CVD mitigation are all "change your sourcing country" strategies. If you switch to Vietnam for cost savings AND Vietnam happens to have an FTA, those aren't additive savings — they're the same move. Only the best sourcing savings counts.
+- Classification review and Section 232 exclusion ARE additive because they change the tariff rate regardless of sourcing country.
+- Duty drawback is excluded from totals because it only applies to re-exported goods.
+
+### Phase 4: Monetization
+Only after Phases 1-3 are solid.
+
+**4A. Stripe Integration**
+- Stripe SDK, products/prices for Free + Pro tiers
+- Checkout flow, customer portal, webhook handler
+- Store subscription on User model (schema changes)
+
+**4B. Usage Limits & Feature Gating**
+- Enforce free tier limits (5 classifications/day, 10 products, 3 countries)
+- Lock Pro features behind paywall with `<UpgradePrompt />`
+
+**4C. Pricing Page**
+- Real Stripe checkout links, Free vs Pro comparison
+
+### Phase 5: New Features (Post-monetization)
+- Interactive cost map (Mapbox)
+- Dollar-impact alerts
+- Email notification delivery
+- Onboarding flow
+
+### Phase 6: Future (Requires revenue)
+- BOL data licensing for supplier discovery
+- Freight API integration
+- See `docs/tarifyx-prd-v2.md` for full future options
+
+## DESIGN SYSTEM (Established)
+
+### Colors
+- Primary: `#0D9488` (teal-600). BG: `#F8FAFC`. Text: `#0F172A` / `#64748B`
+- No blue-violet gradients. CTAs: solid teal.
+
+### Style
+- Cards: `bg-white border border-slate-200 rounded-xl shadow-sm p-6`
+- No glassmorphism. Clean B2B professional. Inter font. Icons: lucide-react.
+
+### Don't Break
+- Classification engine V10 (improve, don't rewrite from scratch)
+- Tariff registry data
+- USITC DataWeb integration
+- Training data and models
+- Database schema (unless adding fields for Stripe)

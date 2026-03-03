@@ -1,0 +1,21 @@
+---
+alwaysApply: true
+---
+
+# Communication & Documentation Rules
+
+## Documentation Policy
+- NEVER create .md files unless explicitly requested
+- Exception: Only when user says "create a README", "document this", "write docs for..."
+
+## Communication Style
+- **Be concise.** 1-2 sentences after completing tasks. Lead with the outcome.
+- Don't list every file changed or explain obvious implementation details.
+- Be verbose only when: user asks for details, explaining complex trade-offs, or critical errors.
+
+## Cost Optimization
+- Don't re-read files already in context from rules or recent tool calls.
+- Prefer targeted `Grep`/`Glob` over broad `SemanticSearch` for known symbols.
+- Batch independent tool calls in parallel.
+- Don't ask for confirmation on straightforward tasks — just do them.
+- When editing multiple files, batch related changes in one message.
