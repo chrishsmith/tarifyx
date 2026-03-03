@@ -217,7 +217,7 @@ const StatsHeader: React.FC<{ stats: MonitoringStats | null; loading: boolean }>
 }) => {
     if (loading) {
         return (
-            <Row gutter={[16, 16]} className="mb-6">
+            <Row gutter={[16, 16]}>
                 {[1, 2, 3, 4].map(i => (
                     <Col xs={12} md={6} key={i}>
                         <Card size="small">
@@ -232,7 +232,7 @@ const StatsHeader: React.FC<{ stats: MonitoringStats | null; loading: boolean }>
     if (!stats) return null;
 
     return (
-        <Row gutter={[16, 16]} className="mb-6">
+        <Row gutter={[16, 16]}>
             <Col xs={12} md={6}>
                 <Card size="small" className="border-l-4 border-l-teal-500">
                     <Statistic
@@ -872,14 +872,14 @@ export const TariffMonitoringTab: React.FC<Props> = ({
     }
 
     return (
-        <div>
+        <div className="flex flex-col gap-10">
             {contextHolder}
 
             {/* Stats Header */}
             <StatsHeader stats={stats} loading={loading} />
 
             {/* Toolbar */}
-            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+            <div className="flex flex-col sm:flex-row gap-3">
                 <Input
                     placeholder="Search products, HTS codes, SKUs..."
                     prefix={<Search size={16} className="text-slate-400" />}
@@ -923,7 +923,6 @@ export const TariffMonitoringTab: React.FC<Props> = ({
                     description="Some products have elevated tariff rates or pending changes. Review the warnings for details."
                     showIcon
                     icon={<AlertTriangle size={18} />}
-                    className="mb-4"
                     closable
                 />
             )}

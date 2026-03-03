@@ -484,7 +484,7 @@ export const FTAQualificationCalculator: React.FC = () => {
     // ═══════════════════════════════════════════════════════════════════════════
     
     return (
-        <div className="space-y-4">
+        <div className="flex flex-col gap-10">
             {contextHolder}
             
             {/* Header */}

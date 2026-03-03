@@ -433,7 +433,7 @@ export const FTARulesLookup: React.FC = () => {
                     <Button
                         key="copy"
                         icon={<Copy className="w-4 h-4" />}
-                        onClick={() => copyRuleText(selectedRule.ruleText)}
+                        onClick={() => copyRuleText(selectedRule.ruleText || '')}
                     >
                         Copy Rule Text
                     </Button>,
@@ -558,7 +558,7 @@ export const FTARulesLookup: React.FC = () => {
     }
 
     return (
-        <div className="space-y-4">
+        <div className="flex flex-col gap-10">
             {contextHolder}
 
             {/* Search and Filter Card */}

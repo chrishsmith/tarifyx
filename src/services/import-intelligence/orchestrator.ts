@@ -450,6 +450,7 @@ async function getFallbackLandedCost(
     lastUpdated: tariffResult.lastVerified,
     tariffConfidence,
     dataSource: 'Tariff Registry (USITC HTS API)',
+    tariffBreakdown: buildTariffBreakdown(tariffResult),
   };
 }
 

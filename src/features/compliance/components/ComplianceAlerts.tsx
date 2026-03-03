@@ -635,7 +635,7 @@ export const ComplianceAlerts: React.FC = () => {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-10">
       {/* Header */}
       <div>
         <Title level={3} className="mb-2 flex items-center gap-2">
@@ -648,7 +648,7 @@ export const ComplianceAlerts: React.FC = () => {
       </div>
 
       {/* Stats */}
-      <Row gutter={16}>
+      <Row gutter={[24, 24]}>
         <Col xs={12} sm={6}>
           <Card size="small" className="text-center">
             <Statistic

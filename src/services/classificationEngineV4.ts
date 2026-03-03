@@ -702,12 +702,4 @@ function capitalizeWords(str: string): string {
         .join(' ');
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// EXPORTS
-// ═══════════════════════════════════════════════════════════════════════════
-
-export {
-    classifyProductGuided,
-    analyzeProductV4,
-};
 

@@ -577,8 +577,7 @@ export async function syncBISEntityList(): Promise<SyncResult> {
         errors: errors.length > 0 ? errors : undefined,
         completedAt: new Date(),
         durationMs,
-        fileChecksum: checksum,
-        lastModified,
+        checksum,
       },
     });
 
@@ -671,8 +670,7 @@ export async function syncBISDeniedPersons(): Promise<SyncResult> {
         errors: errors.length > 0 ? errors : undefined,
         completedAt: new Date(),
         durationMs,
-        fileChecksum: checksum,
-        lastModified,
+        checksum,
       },
     });
 

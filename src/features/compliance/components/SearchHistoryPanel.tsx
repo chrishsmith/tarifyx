@@ -495,7 +495,7 @@ export const SearchHistoryPanel: React.FC = () => {
     }
 
     return (
-        <div className="space-y-6">
+        <div className="flex flex-col gap-10">
             {/* Stats Row */}
             {stats && (
                 <Row gutter={[16, 16]}>

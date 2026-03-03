@@ -186,7 +186,7 @@ export const ComplianceSection: React.FC<ComplianceSectionProps> = ({ compliance
   const orderedCategories = categoryOrder.filter(cat => alertsByCategory[cat]?.length > 0);
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-10">
       {/* ─── Risk Dashboard ─────────────────────────────────────────── */}
       <div 
         className="rounded-xl p-5 border"
@@ -253,7 +253,7 @@ export const ComplianceSection: React.FC<ComplianceSectionProps> = ({ compliance
 
       {/* ─── Alerts by Category ─────────────────────────────────────── */}
       {orderedCategories.length > 0 && (
-        <div className="space-y-6">
+        <div className="flex flex-col gap-10">
           {orderedCategories.map(category => {
             const catAlerts = alertsByCategory[category];
             const catInfo = CATEGORY_LABELS[category];

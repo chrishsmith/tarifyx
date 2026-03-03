@@ -223,7 +223,7 @@ export default function ClassificationV6({ onSaveSuccess }: ClassificationV6Prop
     ];
 
     return (
-        <div className="w-full space-y-6">
+        <div className="w-full flex flex-col gap-10">
             {/* Input Card */}
             <Card className="shadow-sm w-full" styles={{ body: { padding: '24px' } }}>
                 {/* Header */}

@@ -87,9 +87,9 @@ interface Props {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const SourcingLoadingSkeleton: React.FC = () => (
-    <div>
+    <div className="flex flex-col gap-10">
         {/* Header Skeleton */}
-        <div className="flex justify-between items-start" style={{ marginBottom: 24 }}>
+        <div className="flex justify-between items-start">
             <div>
                 <Skeleton.Input active style={{ width: 200, height: 28 }} />
                 <Skeleton.Input active style={{ width: 300, height: 20, marginTop: 8 }} />
@@ -98,7 +98,7 @@ const SourcingLoadingSkeleton: React.FC = () => (
         </div>
         
         {/* AI Summary Skeleton */}
-        <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100" style={{ marginBottom: 24 }}>
+        <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100">
             <div className="flex gap-3">
                 <Skeleton.Avatar active size={24} />
                 <div className="flex-1">
@@ -109,7 +109,7 @@ const SourcingLoadingSkeleton: React.FC = () => (
         </Card>
         
         {/* Quick Stats Skeleton */}
-        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Row gutter={[16, 16]}>
             {[1, 2, 3, 4].map(i => (
                 <Col xs={12} md={6} key={i}>
                     <Card size="small">
@@ -120,7 +120,7 @@ const SourcingLoadingSkeleton: React.FC = () => (
         </Row>
         
         {/* Table Skeleton */}
-        <Card size="small" style={{ marginBottom: 24 }}>
+        <Card size="small">
             <Skeleton active paragraph={{ rows: 6 }} />
         </Card>
     </div>
@@ -212,9 +212,9 @@ export const SourcingRecommendations: React.FC<Props> = ({
     const currentCountryData = alternatives.find(a => a.countryCode === currentCountry);
     
     return (
-        <div>
+        <div className="flex flex-col gap-10">
             {/* Header */}
-            <div className="flex justify-between items-start" style={{ marginBottom: 24 }}>
+            <div className="flex justify-between items-start">
                 <div>
                     <Title level={4} className="mb-1">
                         Sourcing Analysis
@@ -236,7 +236,6 @@ export const SourcingRecommendations: React.FC<Props> = ({
                 <Card 
                     className="border-2 border-orange-200 bg-orange-50/50" 
                     size="small"
-                    style={{ marginBottom: 24 }}
                 >
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -263,7 +262,7 @@ export const SourcingRecommendations: React.FC<Props> = ({
             )}
             
             {/* AI Summary */}
-            <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100" style={{ marginBottom: 24 }}>
+            <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100">
                 <div className="flex gap-3">
                     <Lightbulb className="text-blue-500 shrink-0" size={24} />
                     <div>
@@ -276,7 +275,7 @@ export const SourcingRecommendations: React.FC<Props> = ({
             </Card>
             
             {/* Quick Stats */}
-            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+            <Row gutter={[16, 16]}>
                 <Col xs={12} md={6}>
                     <Card size="small">
                         <Statistic
@@ -325,7 +324,7 @@ export const SourcingRecommendations: React.FC<Props> = ({
             </Row>
             
             {/* Country Comparison Table */}
-            <Card title="Cost by Country" size="small" style={{ marginBottom: 24 }}>
+            <Card title="Cost by Country" size="small">
                 <Table
                     dataSource={alternatives}
                     rowKey="countryCode"
@@ -437,7 +436,7 @@ export const SourcingRecommendations: React.FC<Props> = ({
             </Card>
             
             {/* AI Insights Panels */}
-            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+            <Row gutter={[16, 16]}>
                 {/* Recommendations */}
                 <Col xs={24} md={12}>
                     <Card 
@@ -489,7 +488,6 @@ export const SourcingRecommendations: React.FC<Props> = ({
                         </span>
                     }
                     size="small"
-                    style={{ marginBottom: 24 }}
                 >
                     <ul className="list-disc list-inside space-y-2 text-sm">
                         {aiInsights.opportunities.map((opp, i) => (
@@ -591,7 +589,6 @@ export const SourcingRecommendations: React.FC<Props> = ({
                         </div>
                     ),
                 }))}
-                style={{ marginBottom: 24 }}
             />
             
             {/* Data Note */}

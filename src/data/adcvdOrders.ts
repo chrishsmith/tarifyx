@@ -13,11 +13,14 @@
 // HTS chapters/headings commonly subject to AD/CVD orders
 // This is not exhaustive - there are 500+ active orders
 
-interface ADCVDOrderInfo {
+export interface ADCVDOrderInfo {
     htsPrefix: string;           // HTS prefix to match (chapter, heading, or subheading)
     productCategory: string;     // Human-readable category
     commonCountries: string[];   // Countries with active orders
     orderCount: number;          // Approximate number of active orders
+    notes?: string;              // Additional notes about the order
+    dutyRange?: string;          // Estimated duty range (e.g., "10% - 250%")
+    caseNumbers?: string[];      // ITC/Commerce case numbers
 }
 
 const ADCVD_ORDER_PREFIXES: ADCVDOrderInfo[] = [
@@ -238,6 +241,34 @@ function getCountryName(code: string): string {
         'KH': 'Cambodia',
     };
     return names[code] || code;
+}
+
+/**
+ * Get all AD/CVD order prefixes
+ */
+export function getAllADCVDOrders(): ADCVDOrderInfo[] {
+    return ADCVD_ORDER_PREFIXES;
+}
+
+/**
+ * Get AD/CVD orders matching an HTS code
+ */
+export function getADCVDOrdersByHTS(htsCode: string): ADCVDOrderInfo[] {
+    const clean = htsCode.replace(/\./g, '');
+    return ADCVD_ORDER_PREFIXES.filter(order => {
+        const prefix = order.htsPrefix.replace(/\./g, '');
+        return clean.startsWith(prefix) || prefix.startsWith(clean);
+    });
+}
+
+/**
+ * Get AD/CVD orders affecting a specific country
+ */
+export function getADCVDOrdersByCountry(countryCode: string): ADCVDOrderInfo[] {
+    const code = countryCode.toUpperCase();
+    return ADCVD_ORDER_PREFIXES.filter(order =>
+        order.commonCountries.includes(code)
+    );
 }
 
 /**

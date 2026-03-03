@@ -142,7 +142,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         let baseMfnRate = 0;
         const mfnResult = await getBaseMfnRate(cleanHts);
         if (mfnResult) {
-            baseMfnRate = mfnResult.rate;
+            baseMfnRate = mfnResult.rate ?? 0;
         }
         
         // Get effective tariff from registry

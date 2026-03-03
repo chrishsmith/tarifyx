@@ -302,7 +302,7 @@ export const PGALookup: React.FC = () => {
     const noHtsRequirements = htsCode && data?.flags !== undefined && data.flags.length === 0;
 
     return (
-        <div className="space-y-6 max-w-7xl mx-auto">
+        <div className="flex flex-col gap-10 max-w-7xl mx-auto">
             {contextHolder}
             
             {/* Header */}
@@ -414,7 +414,7 @@ export const PGALookup: React.FC = () => {
                                     <Alert
                                         type="warning"
                                         showIcon
-                                        message={
+                                        title={
                                             <span className="font-semibold">
                                                 PGA Requirements Apply
                                             </span>
@@ -487,7 +487,7 @@ export const PGALookup: React.FC = () => {
                                 <Alert
                                     type="success"
                                     showIcon
-                                    message={
+                                    title={
                                         <span className="font-semibold">
                                             No Known PGA Requirements
                                         </span>
@@ -504,7 +504,7 @@ export const PGALookup: React.FC = () => {
                                 <Alert
                                     type="info"
                                     showIcon
-                                    message="Checking requirements..."
+                                    title="Checking requirements..."
                                 />
                             )}
                         </div>
@@ -696,7 +696,7 @@ export const PGALookup: React.FC = () => {
                 type="info"
                 showIcon
                 icon={<Info className="w-4 h-4" />}
-                message="Important Disclaimer"
+                title="Important Disclaimer"
                 description={
                     <Text className="text-slate-600">
                         PGA requirements are determined by the specific <strong>10-digit HTS code</strong> of your product, 
@@ -787,7 +787,7 @@ export const PGALookup: React.FC = () => {
                         <Alert
                             type="info"
                             showIcon
-                            message="Compliance Reminder"
+                            title="Compliance Reminder"
                             description={
                                 <Text className="text-sm">
                                     Requirements vary by specific HTS code and product type. 
@@ -879,7 +879,7 @@ export const PGALookup: React.FC = () => {
                         <Alert
                             type="warning"
                             showIcon
-                            message="Contact the Agency"
+                            title="Contact the Agency"
                             description={
                                 <div className="text-sm">
                                     <Text>
@@ -893,7 +893,7 @@ export const PGALookup: React.FC = () => {
                                             rel="noopener noreferrer"
                                             className="text-teal-600 hover:text-teal-800 font-medium flex items-center gap-1"
                                         >
-                                            {selectedAgencyDetail.website.replace('https://', '').replace('http://', '').split('/')[0]}
+                                            {selectedAgencyDetail.website?.replace('https://', '').replace('http://', '').split('/')[0]}
                                             <ExternalLink className="w-3 h-3" />
                                         </a>
                                     </div>

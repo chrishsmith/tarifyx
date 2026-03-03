@@ -9,7 +9,9 @@
  */
 
 import { prisma } from '@/lib/db';
-import { FeedbackType } from '@prisma/client';
+
+export type FeedbackType = 'confirmed' | 'corrected' | 'rejected' | 'uncertain';
+export const FEEDBACK_TYPES: FeedbackType[] = ['confirmed', 'corrected', 'rejected', 'uncertain'];
 
 export interface SubmitFeedbackInput {
   searchHistoryId: string;

@@ -289,7 +289,7 @@ export const TradeStatsDashboard: React.FC = () => {
         ];
         
         return (
-            <Row gutter={[16, 16]} className="mb-6">
+            <Row gutter={[16, 16]}>
                 {stats.map((stat, idx) => (
                     <Col xs={12} sm={12} md={6} key={idx}>
                         <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4 md:p-5 h-full relative overflow-hidden">
@@ -312,7 +312,7 @@ export const TradeStatsDashboard: React.FC = () => {
     };
     
     return (
-        <div className="space-y-6">
+        <div className="flex flex-col gap-10">
             {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
                 <div>
@@ -522,7 +522,7 @@ export const TradeStatsDashboard: React.FC = () => {
                                                 paddingAngle={2}
                                                 dataKey="value"
                                                 nameKey="name"
-                                                label={({ name, percentage }) => `${name}: ${percentage}%`}
+                                                label={({ name, percent }: { name?: string; percent?: number }) => `${name || ''}: ${((percent || 0) * 100).toFixed(0)}%`}
                                                 labelLine={{ stroke: '#94A3B8', strokeWidth: 1 }}
                                             >
                                                 {data.pieData.map((entry, index) => (

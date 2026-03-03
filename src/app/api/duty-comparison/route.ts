@@ -13,7 +13,7 @@ import { getEffectiveTariff, type EffectiveTariffResult } from '@/services/tarif
 export const dynamic = 'force-dynamic';
 
 // All supported countries for comparison
-export const COMPARISON_COUNTRIES = [
+const COMPARISON_COUNTRIES = [
     { code: 'CN', name: 'China', flag: '🇨🇳' },
     { code: 'VN', name: 'Vietnam', flag: '🇻🇳' },
     { code: 'IN', name: 'India', flag: '🇮🇳' },

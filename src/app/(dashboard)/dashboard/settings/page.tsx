@@ -30,7 +30,7 @@ export default function SettingsPage() {
     const user = session?.user;
 
     return (
-        <div className="max-w-3xl mx-auto space-y-6">
+        <div className="max-w-3xl mx-auto flex flex-col gap-10">
             {/* Profile */}
             <Card className="border border-slate-200 rounded-xl shadow-sm">
                 <div className="flex items-center gap-2 mb-6">

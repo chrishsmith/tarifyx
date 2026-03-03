@@ -322,7 +322,7 @@ export const CountryCompareSection: React.FC<CountryCompareSectionProps> = ({ co
   const hasContext = Boolean(htsCode);
 
   return (
-    <div className="space-y-4" data-component="country_compare_section">
+    <div className="flex flex-col gap-10" data-component="country_compare_section">
       {/* Annual savings callout — only if there's a real savings opportunity */}
       {bestAlternative && bestAlternative.savings > 0 && (
         <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center justify-between">

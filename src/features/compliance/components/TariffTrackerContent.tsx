@@ -398,9 +398,9 @@ export const TariffTrackerContent: React.FC = () => {
   }
 
   return (
-    <div>
+    <div className="flex flex-col gap-10">
       {/* Context Banner — dynamic based on current landscape */}
-      <div className="mb-6">
+      <div>
         <Alert
           type="info"
           showIcon
@@ -417,7 +417,7 @@ export const TariffTrackerContent: React.FC = () => {
       </div>
 
       {/* Summary Cards */}
-      <div className="mb-6">
+      <div>
         <Row gutter={[16, 16]}>
           <Col xs={12} sm={6}>
             <Card size="small" className="text-center border border-slate-200 shadow-sm">
@@ -467,7 +467,6 @@ export const TariffTrackerContent: React.FC = () => {
       </div>
 
       {/* Search & Filters */}
-      <div className="mb-6">
       <Card className="border border-slate-200 shadow-sm">
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="flex-1">
@@ -527,11 +526,9 @@ export const TariffTrackerContent: React.FC = () => {
           </div>
         </div>
       </Card>
-      </div>
 
       {/* Calculated Total (when HTS + Country selected) */}
       {calculatedTotal && (
-        <div className="mb-6">
         <Card 
           className="border-2 border-teal-200 bg-teal-50 shadow-sm"
           title={
@@ -588,12 +585,11 @@ export const TariffTrackerContent: React.FC = () => {
             </Col>
           </Row>
         </Card>
-        </div>
       )}
 
       {/* Quick Actions */}
       {(htsSearch || selectedCountry) && (
-        <div className="flex flex-wrap gap-3 mb-6">
+        <div className="flex flex-wrap gap-3">
           {htsSearch && selectedCountry && (
             <Button
               icon={<Calculator size={14} />}
@@ -616,7 +612,6 @@ export const TariffTrackerContent: React.FC = () => {
       )}
 
       {/* Main Content - Collapsible Sections */}
-      <div className="mb-6">
       <Collapse defaultActiveKey={['section_301', 'ieepa', 'section_232']}>
         {/* Section 301 */}
         <Panel
@@ -682,8 +677,6 @@ export const TariffTrackerContent: React.FC = () => {
           />
         </Panel>
       </Collapse>
-      </div>
-
 
       {/* External Resources */}
       <Card

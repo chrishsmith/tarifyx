@@ -405,7 +405,7 @@ export const BulkClassificationContent: React.FC = () => {
     return (
         <>
             {contextHolder}
-            <div className="space-y-6">
+            <div className="flex flex-col gap-10">
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
                     <div>

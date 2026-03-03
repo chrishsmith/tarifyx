@@ -134,6 +134,7 @@ function shiftSatisfiesRequirement(achieved: TariffShiftType | null, required: T
         'CTH': 3,
         'CTSH': 2,
         'CTI': 1,
+        'none': 0,
     };
     
     return hierarchy[achieved] >= hierarchy[required];

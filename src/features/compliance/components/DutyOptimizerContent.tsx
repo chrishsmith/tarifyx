@@ -283,7 +283,7 @@ const SmartQuestionPanel = ({
   if (questions.length === 0) return null;
   
   return (
-    <Card className="mb-6 border-amber-200 bg-amber-50/50">
+    <Card className="border-amber-200 bg-amber-50/50">
       <div className="flex items-start gap-3">
         <div className="bg-amber-100 rounded-full p-2">
           <HelpCircle className="text-amber-600" size={20} />
@@ -482,7 +482,7 @@ const LockedCodeCard = ({ code, index, bestFreeRate }: { code: ApplicableCode; i
 
 // Product Interpretation Component
 const ProductInterpretationCard = ({ interpretation }: { interpretation: ProductInterpretation }) => (
-  <Card size="small" className="mb-6 border-blue-200 bg-blue-50/30">
+  <Card size="small" className="border-blue-200 bg-blue-50/30">
     <div className="flex items-start gap-3">
       <div className="bg-blue-100 rounded-full p-2">
         <Sparkles className="text-blue-600" size={20} />
@@ -630,9 +630,9 @@ export const DutyOptimizerContent = () => {
   };
   
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="max-w-6xl mx-auto flex flex-col gap-10">
       {/* Header */}
-      <div className="mb-8">
+      <div>
         <div className="flex items-center gap-3 mb-2">
           <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl p-3">
             <Scale className="text-white" size={24} />
@@ -650,7 +650,7 @@ export const DutyOptimizerContent = () => {
       </div>
       
       {/* Input Form */}
-      <Card className="mb-6 shadow-sm">
+      <Card className="shadow-sm">
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -723,13 +723,12 @@ export const DutyOptimizerContent = () => {
           showIcon
           closable
           onClose={() => setError(null)}
-          className="mb-6"
         />
       )}
       
       {/* Loading State */}
       {loading && (
-        <Card className="mb-6">
+        <Card>
           <div className="flex flex-col items-center justify-center py-12">
             <Spin size="large" />
             <Text className="mt-4 text-slate-500">Analyzing product and searching for applicable codes...</Text>
@@ -743,7 +742,7 @@ export const DutyOptimizerContent = () => {
       
       {/* Results */}
       {result && result.success && (
-        <div>
+        <div className="flex flex-col gap-10">
           {/* Product Interpretation */}
           <ProductInterpretationCard interpretation={result.productInterpretation} />
           
@@ -836,7 +835,6 @@ export const DutyOptimizerContent = () => {
             type="info"
             showIcon
             icon={<Info size={16} />}
-            className="mt-6"
             message="Classification Advisory"
             description={
               <Text className="text-sm">
@@ -848,7 +846,7 @@ export const DutyOptimizerContent = () => {
           />
           
           {/* Analysis Metadata */}
-          <div className="mt-4 text-xs text-slate-400 text-right">
+          <div className="text-xs text-slate-400 text-right">
             Analysis ID: {result.analysisId} | Completed in {(result.processingTimeMs / 1000).toFixed(1)}s
           </div>
         </div>

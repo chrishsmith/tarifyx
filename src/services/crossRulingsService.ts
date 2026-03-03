@@ -335,7 +335,6 @@ export async function getClassificationGuidance(
 
 export {
   CROSS_RULINGS,
-  CURATED_RULINGS,
 };
 
 export default {

@@ -1,19 +1,21 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Form, Input, Button, Checkbox, message, Divider, Tabs } from 'antd';
-import { User, Lock, ArrowRight, Github } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { Form, Input, Button, Checkbox, message, Tabs } from 'antd';
+import { User, Lock, ArrowRight } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { authClient } from '@/lib/auth-client';
 
 export const LoginForm: React.FC = () => {
     const [loading, setLoading] = useState(false);
-    const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+    const searchParams = useSearchParams();
+    const initialMode = searchParams.get('mode') === 'signup' ? 'signup' : 'signin';
+    const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
     const router = useRouter();
     const [form] = Form.useForm();
 
-    const onFinish = async (values: any) => {
+    const onFinish = async (values: { email: string; password: string; name?: string; remember?: boolean }) => {
         setLoading(true);
         try {
             if (mode === 'signup') {
@@ -31,8 +33,8 @@ export const LoginForm: React.FC = () => {
                     return;
                 }
 
-                message.success('Account created! You are now signed in.');
-                router.push('/dashboard');
+                message.success('Account created! Let\'s classify your first product.');
+                router.push('/onboarding');
             } else {
                 const { data, error } = await authClient.signIn.email({
                     email: values.email,
@@ -105,7 +107,10 @@ export const LoginForm: React.FC = () => {
 
                 <Form.Item
                     name="password"
-                    rules={[{ required: true, message: 'Please input your password!' }]}
+                    rules={[
+                        { required: true, message: 'Please input your password!' },
+                        ...(mode === 'signup' ? [{ min: 8, message: 'Password must be at least 8 characters' }] : []),
+                    ]}
                 >
                     <Input.Password
                         prefix={<Lock size={18} className="text-slate-400" />}
@@ -141,14 +146,16 @@ export const LoginForm: React.FC = () => {
                 </Form.Item>
             </Form>
 
-            <Divider plain><span className="text-slate-400 text-xs uppercase font-medium">Or continue with</span></Divider>
-
-            <div className="grid grid-cols-2 gap-4">
-                <Button block icon={<Github size={16} />} className="h-10 mt-2">
-                    Github
-                </Button>
-                <Button block className="h-10 mt-2 font-medium">
-                    SSO
+            <div className="text-center mt-4">
+                <span className="text-slate-400 text-sm">
+                    {mode === 'signin' ? "Don't have an account? " : "Already have an account? "}
+                </span>
+                <Button
+                    type="link"
+                    className="p-0 text-teal-600 font-medium"
+                    onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
+                >
+                    {mode === 'signin' ? 'Create one' : 'Sign in'}
                 </Button>
             </div>
         </div>

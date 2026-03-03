@@ -598,7 +598,7 @@ export const HTSHistoryLookup: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-10">
       {/* Header */}
       <div>
         <Title level={3} className="mb-2 flex items-center gap-2">

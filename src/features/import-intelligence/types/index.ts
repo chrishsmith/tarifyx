@@ -55,6 +55,7 @@ export interface Classification {
   path: string[];
   splitConfidence?: SplitConfidence;
   headingPrediction?: HeadingPredictionSummary;
+  suggestedProductName?: string | null;
 }
 
 export interface DutyLayer {
@@ -125,6 +126,9 @@ export interface LandedCost {
   lastUpdated: Date | string | null;
   tariffConfidence: number;
   dataSource?: string;
+  
+  // Tariff breakdown summary (rate percentages by program)
+  tariffBreakdown?: TariffBreakdownSummary;
 }
 
 export interface TariffBreakdownSummary {
@@ -137,6 +141,7 @@ export interface TariffBreakdownSummary {
   adcvd: number;
   ftaDiscount: number;
   effectiveRate: number;
+  breakdown?: Array<{ type?: string; name?: string; rate?: number; amount?: number }>;
 }
 
 export interface CountryOption {

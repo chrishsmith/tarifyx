@@ -189,7 +189,7 @@ export const ClassificationSection: React.FC<ClassificationSectionProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-10">
       {/* Your Search */}
       {searchQuery && (
         <div>

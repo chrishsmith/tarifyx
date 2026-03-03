@@ -201,7 +201,7 @@ export const DocumentationSection: React.FC<DocumentationSectionProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-10">
       {/* Contextual intro */}
       <div className="flex items-center justify-between">
         <Text className="text-slate-600">

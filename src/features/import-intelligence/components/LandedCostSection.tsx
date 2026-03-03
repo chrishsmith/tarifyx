@@ -119,7 +119,7 @@ export const LandedCostSection: React.FC<LandedCostSectionProps> = ({ landedCost
 
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-10">
       {/* Your Purchase */}
       <div>
         <div className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2">

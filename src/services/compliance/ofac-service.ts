@@ -137,7 +137,7 @@ function parseSDNCSV(content: string): ParsedSDNEntry[] {
     const [entNum, sdnName, sdnType, program, _title, _callSign, _vessType, _tonnage, _grt, _vessFlag, _vessOwner, remarks] = fields;
 
     // Determine entity type
-    let entityType: DeniedPartyType = 'unknown';
+    let entityType: DeniedPartyType | null = null;
     const typeStr = (sdnType || '').toLowerCase().trim();
     if (typeStr === 'individual' || typeStr === '-0-') {
       entityType = 'individual';
@@ -518,8 +518,7 @@ export async function syncOFACSDNList(): Promise<SyncResult> {
         errors: errors.length > 0 ? errors : undefined,
         completedAt: new Date(),
         durationMs,
-        fileChecksum: checksum,
-        lastModified: sdnData.lastModified,
+        checksum,
       },
     });
 

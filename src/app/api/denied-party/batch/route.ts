@@ -22,7 +22,7 @@ interface ScreeningMatch {
     id: string;
     name: string;
     aliases: string[];
-    entityType: string;
+    entityType: string | null;
     countryCode: string | null;
     countryName: string | null;
     sourceList: string;

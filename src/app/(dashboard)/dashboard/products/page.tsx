@@ -72,7 +72,7 @@ function MyProductsContent() {
     };
     
     return (
-        <div className="space-y-6">
+        <div className="flex flex-col gap-10">
             {/* Header */}
             <div className="border-b border-slate-200 pb-4">
                 <Title level={2} className="mb-2">My Products</Title>
@@ -247,7 +247,7 @@ function PortfolioAnalysisPlaceholder() {
 
 function MyProductsSkeleton() {
     return (
-        <div className="space-y-6">
+        <div className="flex flex-col gap-10">
             <div className="border-b border-slate-200 pb-4">
                 <Skeleton.Input active style={{ width: 200, height: 32 }} />
                 <Skeleton.Input active style={{ width: 400, height: 20, marginTop: 8 }} />

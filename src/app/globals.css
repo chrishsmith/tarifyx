@@ -16,6 +16,7 @@ body {
 .ant-card {
   background: #FFFFFF !important;
   border: 1px solid #E2E8F0 !important;
+  margin: 0;
 }
 
 /* Clean Statistic Styling */

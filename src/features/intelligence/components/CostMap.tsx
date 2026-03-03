@@ -202,6 +202,7 @@ export const CostMap: React.FC = () => {
 
         const initMap = async () => {
             const maptilersdk = await import('@maptiler/sdk');
+            // @ts-expect-error CSS import has no type declarations
             await import('@maptiler/sdk/dist/maptiler-sdk.css');
             if (cancelled || !mapContainerRef.current) return;
 
@@ -432,7 +433,7 @@ export const CostMap: React.FC = () => {
     const perUnit = displayUnit === 'each' ? '/unit' : `/${displayUnit}`;
 
     return (
-        <div className="space-y-4">
+        <div className="flex flex-col gap-10">
             {/* Search bar */}
             <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
                 <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">

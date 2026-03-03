@@ -12,7 +12,7 @@ import {
   submitClassificationFeedback,
   getFeedbackStats,
 } from '@/services/classificationFeedback';
-import { FeedbackType } from '@prisma/client';
+import { type FeedbackType, FEEDBACK_TYPES } from '@/services/classificationFeedback';
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    if (!Object.values(FeedbackType).includes(feedbackType)) {
+    if (!FEEDBACK_TYPES.includes(feedbackType)) {
       return NextResponse.json(
         { success: false, error: 'Invalid feedbackType' },
         { status: 400 }

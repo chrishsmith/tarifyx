@@ -277,7 +277,7 @@ export const ADCVDLookup: React.FC = () => {
     const riskDisplay = data ? getRiskDisplay(data.riskLevel) : null;
 
     return (
-        <div className="space-y-6 max-w-7xl mx-auto">
+        <div className="flex flex-col gap-10 max-w-7xl mx-auto">
             {contextHolder}
             
             {/* Header */}

@@ -312,7 +312,7 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
                   style={{ width: '100%' }}
                   min={0}
                   formatter={(value) => `$ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                  parser={(value) => value!.replace(/\$\s?|(,*)/g, '')}
+                  parser={(value) => (Number(value!.replace(/\$\s?|(,*)/g, '')) || 0) as unknown as 0}
                 />
               </Form.Item>
 
@@ -327,7 +327,7 @@ export const ProductInputSection: React.FC<ProductInputSectionProps> = ({
                   style={{ width: '100%' }}
                   min={1}
                   formatter={(value) => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                  parser={(value) => value!.replace(/,/g, '')}
+                  parser={(value) => (Number(value!.replace(/,/g, '')) || 1) as unknown as 1}
                 />
               </Form.Item>
             </div>

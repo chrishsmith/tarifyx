@@ -789,7 +789,7 @@ export const DeniedPartySearch: React.FC = () => {
     ];
     
     return (
-        <div className="max-w-7xl mx-auto space-y-6">
+        <div className="max-w-7xl mx-auto flex flex-col gap-10">
             {contextHolder}
             
             {/* Header */}
@@ -835,7 +835,7 @@ export const DeniedPartySearch: React.FC = () => {
                             </span>
                         ),
                         children: (
-                            <div className="space-y-6">
+                            <div className="flex flex-col gap-10">
                                 {/* Search Card */}
                                 <Card className="shadow-sm">
                                     <div className="space-y-4">
@@ -1019,7 +1019,7 @@ export const DeniedPartySearch: React.FC = () => {
                             </span>
                         ),
                         children: (
-                            <div className="space-y-6">
+                            <div className="flex flex-col gap-10">
                                 <Card className="shadow-sm">
                                     {batchStage === 'idle' && (
                                         <div className="space-y-6">

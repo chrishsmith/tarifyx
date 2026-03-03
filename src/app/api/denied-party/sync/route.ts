@@ -34,7 +34,7 @@ type SupportedList = 'ofac_sdn' | 'bis_entity_list' | 'bis_denied' | 'all';
 function formatSyncLog(log: {
   id: string;
   status: string;
-  startedAt: Date;
+  createdAt: Date;
   completedAt: Date | null;
   totalRecords: number;
   recordsCreated: number;
@@ -42,15 +42,15 @@ function formatSyncLog(log: {
   recordsDeleted: number;
   errors: unknown;
   durationMs: number | null;
-  fileChecksum: string | null;
-  lastModified: Date | null;
+  checksum: string | null;
   sourceList?: DeniedPartyList;
+  sourceUrl?: string | null;
 }) {
   return {
     id: log.id,
     status: log.status,
     sourceList: log.sourceList,
-    startedAt: log.startedAt,
+    startedAt: log.createdAt,
     completedAt: log.completedAt,
     totalRecords: log.totalRecords,
     recordsCreated: log.recordsCreated,
@@ -58,8 +58,7 @@ function formatSyncLog(log: {
     recordsDeleted: log.recordsDeleted,
     errors: log.errors,
     durationMs: log.durationMs,
-    fileChecksum: log.fileChecksum,
-    lastModified: log.lastModified,
+    fileChecksum: log.checksum,
   };
 }
 

@@ -132,7 +132,7 @@ export const SupplierExplorer: React.FC<SupplierExplorerProps> = ({
     const isFiltered = !!initialCountry || !!initialHtsCode;
 
     return (
-        <div className="space-y-6">
+        <div className="flex flex-col gap-10">
             {/* Back Button + Filter Context */}
             {isFiltered && (
                 <Alert

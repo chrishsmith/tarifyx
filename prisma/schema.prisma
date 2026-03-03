@@ -146,6 +146,7 @@ enum UsageFeature {
   api_call
   export_csv
   export_pdf
+  batch_screening
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1165,6 +1166,68 @@ model HtsSyncLog {
   @@index([createdAt(sort: Desc)])
   @@index([revisionId])
   @@map("hts_sync_log")
+}
+
+model DeniedPartySyncLog {
+  id             String           @id @default(cuid())
+  sourceList     DeniedPartyList
+  sourceUrl      String?
+  status         String           @default("pending")
+  totalRecords   Int       @default(0)
+  recordsCreated Int       @default(0)
+  recordsUpdated Int       @default(0)
+  recordsDeleted Int       @default(0)
+  errors         Json?
+  checksum       String?
+  completedAt    DateTime?
+  durationMs     Int?
+  createdAt      DateTime  @default(now())
+
+  @@index([sourceList])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("denied_party_sync_log")
+}
+
+model DeniedParty {
+  id              String    @id @default(cuid())
+  name            String
+  aliases         String[]  @default([])
+  entityType      DeniedPartyType?
+  countryCode     String?
+  countryName     String?
+  addresses       String[]  @default([])
+  identifiers     Json?
+  sourceList      DeniedPartyList
+  sourceId        String
+  sourcePrograms  String[]  @default([])
+  remarks         String?
+  federalRegister String?
+  listedDate      DateTime?
+  isActive        Boolean   @default(true)
+  delistedDate    DateTime?
+  lastUpdated     DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+
+  @@unique([sourceList, sourceId])
+  @@index([isActive])
+  @@index([sourceList])
+  @@index([name])
+  @@index([countryCode])
+  @@map("denied_party")
+}
+
+enum DeniedPartyList {
+  ofac_sdn
+  bis_entity_list
+  bis_denied
+}
+
+enum DeniedPartyType {
+  individual
+  entity
+  vessel
+  aircraft
 }
 
 enum SyncStatus {

@@ -201,7 +201,7 @@ export const CountryComparisonDrawer: React.FC<CountryComparisonDrawerProps> = (
       open={open}
       data-component="country_comparison_drawer"
     >
-      <div className="space-y-4" data-component="country_comparison_drawer_body">
+      <div className="space-y-6" data-component="country_comparison_drawer_body">
         {/* Header Info */}
         <div className="bg-slate-50 rounded-lg p-4">
           <Text className="text-sm text-slate-600 block mb-1">Comparing landed costs for:</Text>

@@ -220,7 +220,7 @@ export default function ClassificationV10() {
     return (
         <>
             {contextHolder}
-            <div className="space-y-6">
+            <div className="flex flex-col gap-10">
                 {/* Header */}
                 <Card className="border-slate-200">
                     <div className="flex items-center gap-3 mb-4">

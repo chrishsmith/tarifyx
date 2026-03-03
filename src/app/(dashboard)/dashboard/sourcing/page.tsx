@@ -89,8 +89,7 @@ function SourcingPageContent() {
         setLoadingStep(0);
         
         try {
-            // Step 1: Classify the product
-            const response = await fetch('/api/classify', {
+            const response = await fetch('/api/classify-v10', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -98,7 +97,6 @@ function SourcingPageContent() {
                     countryOfOrigin: values.countryOfOrigin,
                     materialComposition: values.materialComposition,
                     intendedUse: values.intendedUse,
-                    classificationType: 'import',
                 }),
             });
             
@@ -106,14 +104,14 @@ function SourcingPageContent() {
                 throw new Error('Classification failed');
             }
             
-            const result = await response.json();
-            setLoadingStep(1);
+            const data = await response.json();
+            const code = data.result?.code || data.result?.htsCode;
+            if (!code) throw new Error('No HTS code returned');
             
-            // Brief pause to show progress
+            setLoadingStep(1);
             await new Promise(resolve => setTimeout(resolve, 500));
             
-            // Step 2: Set up sourcing analysis with the classified HTS code
-            setHtsCode(result.htsCode.code);
+            setHtsCode(code);
             setCurrentCountry(values.countryOfOrigin);
             setProductDescription(values.productDescription);
             
@@ -122,7 +120,7 @@ function SourcingPageContent() {
             
             setShowAnalysis(true);
             setIsFromNavigation(false);
-            messageApi.success(`Classified as HTS ${result.htsCode.code}`);
+            messageApi.success(`Classified as HTS ${code}`);
         } catch (error) {
             console.error('Error:', error);
             messageApi.error('Classification failed. Please try again.');
@@ -175,7 +173,7 @@ function SourcingPageContent() {
     // Loading state
     if (loading) {
         return (
-            <div className="space-y-6">
+            <div className="flex flex-col gap-10">
                 {contextHolder}
                 <div className="border-b border-slate-200 pb-4">
                     <Title level={2} className="mb-2">Sourcing Intelligence</Title>
@@ -209,7 +207,7 @@ function SourcingPageContent() {
     }
     
     return (
-        <div className="space-y-6">
+        <div className="flex flex-col gap-10">
             {contextHolder}
             
             {/* Header */}
@@ -467,7 +465,7 @@ function SourcingPageContent() {
 
 function SourcingPageSkeleton() {
     return (
-        <div className="space-y-6">
+        <div className="flex flex-col gap-10">
             <div className="border-b border-slate-200 pb-4">
                 <Skeleton.Input active style={{ width: 300, height: 32 }} />
                 <Skeleton.Input active style={{ width: 500, height: 20, marginTop: 8 }} />

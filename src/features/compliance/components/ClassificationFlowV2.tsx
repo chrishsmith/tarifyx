@@ -365,7 +365,7 @@ export const ClassificationFlowV2: React.FC = () => {
         });
         
         return (
-            <div className="space-y-6">
+            <div className="flex flex-col gap-10">
                 {/* Compact Header */}
                 <div className="flex items-center justify-between">
                     <div>
@@ -524,7 +524,7 @@ export const ClassificationFlowV2: React.FC = () => {
         const totalCount = sortedVariables.length;
         
         return (
-            <div className="space-y-6">
+            <div className="flex flex-col gap-10">
                 {/* Header */}
                 <Card className="shadow-lg border-0" styles={{ body: { padding: '20px' } }}>
                     <div className="flex items-center justify-between">
@@ -939,7 +939,7 @@ export const ClassificationFlowV2: React.FC = () => {
             confidence >= 65 ? 'text-amber-600' : 'text-red-600';
         
         return (
-            <div className="space-y-6">
+            <div className="flex flex-col gap-10">
                 {/* Main Result Card */}
                 <Card className="shadow-lg border-0" styles={{ body: { padding: '24px' } }}>
                     <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">

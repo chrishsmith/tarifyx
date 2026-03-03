@@ -78,23 +78,13 @@ const SAMPLE_DATA = {
     ],
 };
 
-// Generate historical trend data
-function generateTrendData(baseValue: number, years: number[]): Array<{ year: number; value: number; quantity: number }> {
-    const trends = [];
-    let currentValue = baseValue;
-    
-    for (let i = years.length - 1; i >= 0; i--) {
-        const yearVariation = 1 + (Math.random() * 0.2 - 0.1); // +/- 10% variation
-        const value = Math.round(currentValue * yearVariation);
-        trends.push({
-            year: years[i],
-            value: value,
-            quantity: Math.round(value / (4 + Math.random() * 2)) // Rough unit value estimate
-        });
-        currentValue = value;
-    }
-    
-    return trends.reverse();
+function generateTrendFromGrowth(currentValue: number, growth: number, years: number[]): Array<{ year: number; value: number; quantity: number }> {
+    const annualGrowthRate = (growth || 0) / 100;
+    return years.map((year, i) => {
+        const yearsBack = years.length - 1 - i;
+        const value = Math.round(currentValue / Math.pow(1 + annualGrowthRate, yearsBack));
+        return { year, value, quantity: 0 };
+    });
 }
 
 export async function GET(request: Request) {
@@ -137,10 +127,7 @@ export async function GET(request: Request) {
             try {
                 const realData = await getImportStatsByHTS(htsCode, { years: years.slice(0, 2) });
                 if (realData.length > 0) {
-                    importStats = realData.map(stat => ({
-                        ...stat,
-                        growth: Math.round((Math.random() * 40 - 20) * 10) / 10 // Placeholder growth
-                    }));
+                    importStats = realData;
                 }
             } catch (error) {
                 console.error('[TradeStats] Error fetching real data:', error);
@@ -166,10 +153,9 @@ export async function GET(request: Request) {
         const totalImportValue = importStats.reduce((sum, stat) => sum + stat.totalValue, 0);
         const totalQuantity = importStats.reduce((sum, stat) => sum + stat.totalQuantity, 0);
         
-        // Generate trend data for the top source
         const topSource = importStats[0];
         const trendData = topSource 
-            ? generateTrendData(topSource.totalValue, years)
+            ? generateTrendFromGrowth(topSource.totalValue, topSource.growth || 0, years)
             : years.map(year => ({ year, value: 0, quantity: 0 }));
         
         // Calculate YoY growth for totals

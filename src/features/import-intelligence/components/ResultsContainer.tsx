@@ -29,7 +29,7 @@ export const ResultsContainer: React.FC<ResultsContainerProps> = ({ analysis, on
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-10">
       {/* Header */}
       <Card className="shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">

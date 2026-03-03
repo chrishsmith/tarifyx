@@ -40,5 +40,5 @@ export const getCountryName = (code: string) =>
 export const getCountryFlag = (code: string) => 
     getCountryByCode(code)?.flag || '🌍';
 
-export const COUNTRY_OPTIONS = COUNTRIES;
+export const COUNTRY_OPTIONS: Array<{ value: string; label: string; flag: string; name: string }> = [...COUNTRIES];
 
